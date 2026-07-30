@@ -1,0 +1,866 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   settings
+
+   A full-page overlay, not a dialog: preferences are a place you go, and the
+   left-nav-plus-rows layout is the idiom people already know from Linear,
+   Raycast and VS Code. Everything is token-driven, so the page itself
+   re-skins the moment a theme is picked — picking a theme is the demo.
+
+   All classes are namespaced `.st-` / `.stp-` to keep them collision-free.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --z-settings: 95; /* below modal/palette so ⌘K and dialogs stack above */
+}
+
+.st-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-settings);
+  display: flex;
+  flex-direction: column;
+  background: var(--canvas);
+  opacity: 1;
+  transition: opacity var(--t-modal) var(--ease-out);
+}
+@starting-style {
+  .st-overlay {
+    opacity: 0;
+  }
+  .st-shell {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* ---- header ------------------------------------------------------------ */
+
+.st-head {
+  flex: none;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* Clears the macOS traffic lights, like the topbar. */
+  padding: 0 14px 0 86px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--line-faint);
+  -webkit-app-region: drag;
+}
+.st-head .icon-btn {
+  -webkit-app-region: no-drag;
+}
+.st-title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
+}
+.st-head-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-4);
+}
+
+/* ---- shell: nav + content ---------------------------------------------- */
+
+/* Fills the window rather than sitting in a centred 1040px band: settings is
+   a full-screen surface, and on a wide display that band left both outer
+   thirds empty. The nav pins to the left edge and the content takes the rest;
+   the reading measure is protected inside each section instead. */
+.st-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  width: 100%;
+  transition: opacity var(--t-modal) var(--ease-out),
+    transform var(--t-modal) var(--ease-out);
+}
+
+.st-nav {
+  flex: none;
+  width: 214px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  padding: 20px 12px 16px;
+  border-right: 1px solid var(--line-faint);
+  background: var(--surface-1);
+}
+.st-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--r-md);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  text-align: left;
+  transition: background var(--t-hover) ease, color var(--t-hover) ease;
+}
+.st-nav-item svg {
+  color: var(--text-3);
+  flex: none;
+  transition: color var(--t-hover) ease;
+}
+.st-nav-item:hover {
+  /* text-1 flips between near-white and near-black across themes, so a
+     colour-mixed wash of it reads as a hover in both. */
+  background: color-mix(in srgb, var(--text-1) 5%, transparent);
+  color: var(--text-1);
+}
+.st-nav-item:active {
+  transform: scale(0.98);
+}
+.st-nav-item-active,
+.st-nav-item-active:hover {
+  background: var(--accent-wash);
+  color: var(--accent-hi);
+}
+.st-nav-item-active svg {
+  color: var(--accent-hi);
+}
+.st-nav-foot {
+  margin-top: auto;
+  padding: 12px 10px 0;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  line-height: 1.5;
+}
+
+.st-content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 24px 28px 48px;
+}
+
+/* Prose still needs a readable measure even though the pane is now wide. */
+.st-section-sub {
+  max-width: 68ch;
+}
+
+/* Sections that are a single stack of rows would look absurd stretched to a
+   1500px-wide row, so they keep a comfortable width and simply start at the
+   left rather than floating in the middle. */
+.st-group,
+.st-theme-grid,
+.st-krow-wrap {
+  max-width: 940px;
+}
+.st-section-head {
+  margin: 0 0 4px;
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--text-1);
+}
+.st-section-sub {
+  margin: 0 0 22px;
+  font-size: var(--fs-sm);
+  color: var(--text-3);
+  line-height: 1.55;
+}
+
+/* ---- groups and rows ---------------------------------------------------- */
+
+.st-group-label {
+  margin: 22px 0 8px;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-4);
+}
+.st-group-label:first-of-type {
+  margin-top: 0;
+}
+.st-group {
+  background: var(--surface-1);
+  border: 1px solid var(--line-faint);
+  border-radius: var(--r-xl);
+  overflow: hidden;
+}
+.st-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 12px 14px;
+}
+.st-row + .st-row {
+  border-top: 1px solid var(--line-faint);
+}
+.st-row-text {
+  min-width: 0;
+}
+.st-row-label {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-1);
+}
+.st-row-hint {
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  line-height: 1.5;
+}
+.st-row-control {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---- controls: switch, stepper, select ---------------------------------- */
+
+.st-switch {
+  --x: 0px;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  flex: none;
+  border-radius: var(--r-full);
+  background: var(--surface-active);
+  border: 1px solid var(--line);
+  transition: background var(--t-pop) ease, border-color var(--t-pop) ease;
+}
+.st-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-2);
+  transform: translateX(var(--x));
+  transition: transform var(--t-pop) var(--ease-out), background var(--t-hover) ease;
+}
+.st-switch:active::after {
+  transform: translateX(var(--x)) scale(0.86);
+}
+.st-switch-on {
+  --x: 14px;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.st-switch-on::after {
+  background: var(--on-solid);
+}
+
+.st-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 2px;
+}
+.st-step-btn {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-content: center;
+  border-radius: var(--r-xs);
+  color: var(--text-3);
+  transition: background var(--t-hover) ease, color var(--t-hover) ease,
+    transform var(--t-press) var(--ease-out);
+}
+.st-step-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-1);
+}
+.st-step-btn:active:not(:disabled) {
+  transform: scale(0.88);
+}
+.st-step-val {
+  min-width: 36px;
+  text-align: center;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.st-step-unit {
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  padding-right: 5px;
+}
+
+.st-select-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.st-select {
+  appearance: none;
+  height: 28px;
+  padding: 0 26px 0 10px;
+  background: var(--surface-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--text-1);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  outline: none;
+  transition: border-color var(--t-hover) ease, box-shadow var(--t-hover) ease;
+}
+.st-select:hover {
+  border-color: var(--line-strong);
+}
+.st-select:focus {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.st-select-wrap svg {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-4);
+  pointer-events: none;
+}
+
+/* ---- theme picker -------------------------------------------------------- */
+
+.st-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(216px, 1fr));
+  gap: 10px;
+}
+.st-theme-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--surface-1);
+  border: 1px solid var(--line-faint);
+  border-radius: var(--r-lg);
+  text-align: left;
+  animation: row-in 260ms var(--ease-out) both;
+  transition: border-color var(--t-hover) ease, background var(--t-hover) ease,
+    transform var(--t-press) var(--ease-out);
+}
+.st-theme-card:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-2);
+}
+.st-theme-card:active {
+  transform: scale(0.98);
+}
+.st-theme-card-active,
+.st-theme-card-active:hover {
+  border-color: var(--accent-line);
+  background: var(--accent-wash);
+}
+.st-theme-check {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-content: center;
+  background: var(--accent);
+  color: var(--on-solid);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+  animation: st-pop 200ms var(--ease-out) both;
+}
+@keyframes st-pop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+.st-theme-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 2px;
+}
+.st-theme-name {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-1);
+}
+.st-theme-kind {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  padding: 1px 6px;
+}
+.st-theme-desc {
+  padding: 0 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  line-height: 1.45;
+}
+
+/* The live preview: this element carries data-theme itself, so the theme's
+   token block in themes.css scopes to just this subtree — a real render of
+   the theme with zero duplicated colour values. */
+.st-preview {
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  flex: none;
+}
+.stp-top {
+  height: 13px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 7px;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--line-faint);
+}
+.stp-top i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--n-600);
+}
+.stp-body {
+  display: flex;
+  height: 62px;
+}
+.stp-side {
+  width: 32%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 6px;
+  background: var(--surface-1);
+  border-right: 1px solid var(--line-faint);
+}
+.stp-siderow {
+  height: 5px;
+  width: 85%;
+  border-radius: 2px;
+  background: var(--surface-active);
+}
+.stp-siderow-on {
+  width: 65%;
+  background: var(--accent);
+}
+.stp-term {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--canvas);
+  font-family: var(--font-mono);
+  font-size: 7.5px;
+  line-height: 1.8;
+  letter-spacing: 0.01em;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.stp-term .c-ok { color: var(--ok); }
+.stp-term .c-info { color: var(--info); }
+.stp-term .c-t2 { color: var(--text-2); }
+.stp-cursor {
+  display: inline-block;
+  width: 5px;
+  height: 8px;
+  margin-left: 2px;
+  vertical-align: -1px;
+  background: var(--accent);
+}
+
+/* ---- terminal palette strip --------------------------------------------- */
+
+.st-ansi {
+  display: flex;
+  gap: 5px;
+  padding: 12px 14px;
+}
+.st-ansi i {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--r-xs);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-1) 12%, transparent);
+}
+
+/* ---- agents -------------------------------------------------------------- */
+
+.st-agent-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 14px;
+}
+.st-agent-row + .st-agent-row {
+  border-top: 1px solid var(--line-faint);
+}
+.st-agent-main {
+  min-width: 0;
+  flex: 1;
+}
+.st-agent-name {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-1);
+}
+.st-agent-cmd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+.st-agent-status {
+  flex: none;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+}
+.st-agent-ok {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 13%, transparent);
+}
+.st-agent-missing {
+  color: var(--text-4);
+  background: color-mix(in srgb, var(--text-1) 7%, transparent);
+}
+.st-agent-default {
+  color: var(--accent-hi);
+  background: var(--accent-wash);
+}
+
+/* ---- shortcuts ------------------------------------------------------------ */
+
+.st-krow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 14px;
+}
+.st-krow + .st-krow {
+  border-top: 1px solid var(--line-faint);
+}
+.st-krow-label {
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+.st-keys {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.st-keys em {
+  font-style: normal;
+  color: var(--text-4);
+  font-size: var(--fs-xs);
+  padding: 0 2px;
+}
+
+/* ---- about ---------------------------------------------------------------- */
+
+.st-about-hero {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 18px 16px;
+}
+.st-about-name {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
+}
+.st-about-tag {
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+}
+.st-kv {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  font-size: var(--fs-sm);
+}
+.st-kv + .st-kv {
+  border-top: 1px solid var(--line-faint);
+}
+.st-kv-k {
+  color: var(--text-3);
+}
+.st-kv-v {
+  color: var(--text-1);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  text-align: right;
+}
+.st-kv-v code {
+  font-size: var(--fs-xs);
+}
+
+/* ---- volume slider ------------------------------------------------------- */
+
+.st-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.st-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 130px;
+  height: 4px;
+  border-radius: var(--r-full);
+  outline: none;
+  cursor: pointer;
+  /* The fill is set inline as a gradient, so it tracks the value exactly. */
+}
+.st-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-1);
+  border: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  transition: transform var(--t-press) var(--ease-out);
+}
+.st-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.12);
+}
+.st-slider:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+}
+.st-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-1);
+  border: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.st-slider-val {
+  min-width: 38px;
+  text-align: right;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.st-slider-disabled {
+  opacity: 0.45;
+}
+.st-slider-disabled .st-slider {
+  cursor: default;
+}
+
+/* ---- nested rows dimmed by a master toggle --------------------------------
+   The per-event switches stay visible under their master — hiding them would
+   erase what they remember — but they collapse to read-only when off. */
+.st-subrows .st-row {
+  padding-left: 26px;
+}
+.st-subrows-off {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* ---- status pills ---------------------------------------------------------- */
+
+.st-pill-waiting {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 13%, transparent);
+}
+.st-pill-exited {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
+}
+
+/* ---- danger zone ---------------------------------------------------------- */
+
+.st-danger {
+  border-color: color-mix(in srgb, var(--danger) 32%, var(--line-faint));
+}
+
+/* Recovery actions inside the usage panel's error state. */
+.cu-note-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+.cu-note-actions .btn {
+  height: 26px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   agent editor
+
+   A list that expands in place rather than a modal per agent: you come here to
+   compare what several agents are set to, and a dialog would hide the very
+   thing you are checking against.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ae-list {
+  padding: 0;
+}
+
+.ae-row + .ae-row {
+  border-top: 1px solid var(--line-faint);
+}
+.ae-row-open {
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.ae-row-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  text-align: left;
+  transition: background var(--t-hover) ease;
+}
+.ae-row-head:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.ae-chev {
+  flex: none;
+  display: inline-flex;
+  color: var(--text-4);
+}
+
+.ae-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.ae-row-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-1);
+}
+.ae-row-cmd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ae-tag {
+  font-style: normal;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 1px 5px;
+  border-radius: var(--r-full);
+  background: var(--surface-active);
+  color: var(--text-3);
+}
+.ae-tag-accent {
+  background: var(--accent-wash);
+  color: var(--accent-hi);
+}
+
+.ae-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 12px 14px 34px;
+}
+.ae-form-new {
+  padding: 14px 12px;
+}
+
+.ae-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ae-field-label {
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  color: var(--text-2);
+}
+.ae-field-hint {
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  line-height: 1.45;
+}
+
+.ae-input {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  color: var(--text-1);
+  font-family: var(--font);
+  font-size: var(--fs-sm);
+  outline: none;
+  transition: border-color var(--t-hover) ease, box-shadow var(--t-hover) ease;
+}
+.ae-input:focus {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.ae-mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+}
+.ae-textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.ae-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ae-spacer {
+  flex: 1;
+}
+
+.ae-add {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 11px 12px;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  transition: background var(--t-hover) ease, color var(--t-hover) ease;
+}
+.ae-add:hover {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-1);
+}

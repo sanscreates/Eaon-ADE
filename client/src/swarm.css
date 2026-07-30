@@ -1,0 +1,429 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Eaon ADE — swarm console
+
+   A control surface, not a document: the roster on the left reads as a list of
+   seats you can flip on and off at a glance, and the composer is pinned to the
+   bottom because "what should they all do next" is the one thing you come here
+   to type. Colour follows the same rule as everywhere else — the accent means
+   "this is live", and nothing else earns a hue.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.swarm {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--canvas);
+}
+
+/* ---- header -------------------------------------------------------------- */
+
+.swarm-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-faint);
+  background: var(--surface-1);
+}
+.swarm-head-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.swarm-head-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-md);
+  background: var(--accent-wash);
+  color: var(--accent-hi);
+}
+.swarm-head-title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-1);
+  line-height: 1.2;
+}
+.swarm-head-sub {
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+}
+.swarm-head-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---- body ---------------------------------------------------------------- */
+
+.swarm-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.swarm-roster {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ---- a role ------------------------------------------------------------- */
+
+.swarm-role {
+  border: 1px solid var(--line-faint);
+  border-radius: var(--r-lg);
+  background: var(--surface-1);
+  padding: 10px 12px 12px;
+}
+
+.swarm-role-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.swarm-role-name {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-1);
+}
+.swarm-role-count {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: var(--r-full);
+  background: var(--surface-3);
+  color: var(--text-4);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.swarm-role-head .icon-btn {
+  width: 22px;
+  height: 22px;
+}
+/* Push the two trailing buttons to the right without a spacer element. */
+.swarm-role-head .icon-btn:nth-last-of-type(2) {
+  margin-left: auto;
+}
+
+/* The charter is reference text, not prose to read every time — two lines,
+   then it defers to the tooltip and the editor. */
+.swarm-charter {
+  margin: 6px 0 10px;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  color: var(--text-3);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.swarm-charter-edit {
+  margin: 8px 0 10px;
+}
+.swarm-charter-input {
+  width: 100%;
+  resize: vertical;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  color: var(--text-1);
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  outline: none;
+  transition: border-color var(--t-hover) ease, box-shadow var(--t-hover) ease;
+}
+.swarm-charter-input:focus {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.swarm-charter-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.swarm-charter-actions .swarm-hint {
+  flex: 1;
+  min-width: 0;
+}
+
+.swarm-hint {
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+}
+
+/* ---- seats -------------------------------------------------------------- */
+
+.swarm-members {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.swarm-member {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border-radius: var(--r-md);
+  background: var(--surface-3);
+  border: 1px solid var(--line-faint);
+  transition: opacity var(--t-hover) ease, border-color var(--t-hover) ease;
+}
+.swarm-member-off {
+  opacity: 0.5;
+}
+
+/* A seat's on/off switch. Small, because it is the least of the four controls
+   on this row and should not read as the primary one. */
+.swarm-toggle {
+  flex: none;
+  width: 26px;
+  height: 15px;
+  border-radius: var(--r-full);
+  background: var(--surface-active);
+  position: relative;
+  transition: background var(--t-hover) ease;
+}
+.swarm-toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--text-4);
+  transition: transform var(--t-press) var(--ease-out), background var(--t-hover) ease;
+}
+.swarm-toggle-on {
+  background: var(--accent-wash);
+}
+.swarm-toggle-on::after {
+  transform: translateX(11px);
+  background: var(--accent);
+}
+
+.swarm-member-agent {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-2);
+}
+
+.swarm-agent-select {
+  flex: 1;
+  min-width: 100px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  color: var(--text-2);
+  font-family: var(--font);
+  font-size: var(--fs-xs);
+  outline: none;
+}
+.swarm-agent-select:focus {
+  border-color: var(--accent-line);
+}
+
+.swarm-member-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+.swarm-member-actions .icon-btn {
+  width: 22px;
+  height: 22px;
+}
+
+.swarm-add-seat {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px;
+  border-radius: var(--r-md);
+  border: 1px dashed var(--line);
+  color: var(--text-4);
+  font-size: var(--fs-xs);
+  transition: color var(--t-hover) ease, border-color var(--t-hover) ease;
+}
+.swarm-add-seat:hover {
+  color: var(--text-2);
+  border-color: var(--line-strong);
+}
+
+/* Notes take the full row width below the controls they belong to. */
+.swarm-notes {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+.swarm-notes-input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  color: var(--text-1);
+  font-size: var(--fs-xs);
+  outline: none;
+}
+.swarm-notes-input:focus {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+/* ---- the composer ------------------------------------------------------- */
+
+.swarm-console {
+  flex: none;
+  border-top: 1px solid var(--line);
+  background: var(--surface-1);
+  padding: 10px 12px 12px;
+}
+
+.swarm-targets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+.swarm-targets-label {
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  margin-right: 2px;
+}
+.swarm-targets .chip {
+  height: 22px;
+  padding: 0 9px;
+  font-size: var(--fs-xs);
+}
+.swarm-targets .chip:disabled {
+  opacity: 0.4;
+}
+
+.swarm-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.swarm-task-input {
+  width: 100%;
+  resize: vertical;
+  min-height: 62px;
+  padding: 9px 11px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  color: var(--text-1);
+  font-family: var(--font);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  outline: none;
+  transition: border-color var(--t-hover) ease, box-shadow var(--t-hover) ease;
+}
+.swarm-task-input::placeholder {
+  color: var(--text-4);
+}
+.swarm-task-input:focus {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.swarm-compose-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.swarm-compose-foot .swarm-hint {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---- dispatch log ------------------------------------------------------- */
+
+.swarm-log {
+  margin-top: 10px;
+  border-top: 1px solid var(--line-faint);
+  padding-top: 8px;
+}
+.swarm-log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  margin-bottom: 4px;
+}
+.swarm-log-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: var(--fs-xs);
+}
+.swarm-log-targets {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--accent);
+}
+.swarm-log-task {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-3);
+}
+.swarm-log-time {
+  flex: none;
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- wide windows: roster and composer side by side --------------------- */
+
+@media (min-width: 1100px) {
+  .swarm-body {
+    flex-direction: row;
+  }
+  .swarm-roster {
+    flex: 1;
+  }
+  .swarm-console {
+    flex: none;
+    width: 380px;
+    border-top: none;
+    border-left: 1px solid var(--line);
+    overflow-y: auto;
+  }
+}

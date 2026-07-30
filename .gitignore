@@ -1,0 +1,11 @@
+node_modules/
+dist/
+release/
+build/AppIcon.iconset/
+build/eaon-icon-src.png
+.DS_Store
+*.log
+
+# Per-project runtime state the app writes: board cards, swarm config, notes.
+# It is this checkout's data, not the product's source.
+.eaon/

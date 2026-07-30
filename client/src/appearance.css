@@ -1,0 +1,583 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Settings › Appearance
+
+   Collapsible cards, each grouping one surface: Interface, Terminal, and
+   Window & Sidebar. Rows are label + hint on the left, control on the right;
+   the long tail of each card folds into an "Advanced" disclosure so the
+   default view stays readable.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Two independent column stacks, not an auto-placed grid. Grid rows tie every
+   card in a row to the tallest one, and Terminal — with its 360px scheme list
+   — is tall enough that the card beside it left a screen-high hole before the
+   next row could start. Columns each flow on their own, so a card always sits
+   directly under the one above it. They wrap to a single stack when the pane
+   is too narrow to hold both. */
+.ap-cards {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+  max-width: 1280px;
+}
+.ap-col {
+  flex: 1 1 430px;
+  /* Forces the wrap instead of squeezing both columns below a usable width;
+     the inner min() lets a single column still fit a very narrow pane. */
+  min-width: min(430px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---- card ------------------------------------------------------------- */
+
+.ap-card {
+  border: 1px solid var(--line-faint);
+  border-radius: var(--r-xl);
+  background: rgba(255, 255, 255, 0.018);
+  overflow: hidden;
+}
+
+.ap-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 14px;
+  text-align: left;
+  transition: background var(--t-hover) ease;
+}
+.ap-card-head:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+/* Static heads (no collapse affordance) don't invite the click. */
+.ap-card-head-static {
+  cursor: default;
+}
+.ap-card-head-static:hover {
+  background: none;
+}
+
+.ap-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--r-sm);
+  background: var(--surface-3);
+  border: 1px solid var(--line-faint);
+  color: var(--text-2);
+}
+
+.ap-card-title {
+  flex: 1;
+  font-size: var(--fs-base);
+  font-weight: 600;
+  color: var(--text-1);
+  letter-spacing: -0.005em;
+}
+
+.ap-card-chev {
+  color: var(--text-4);
+  flex: none;
+  transition: transform var(--t-pop) var(--ease-out);
+}
+.ap-card-closed .ap-card-chev {
+  transform: rotate(-90deg);
+}
+
+.ap-card-body {
+  padding: 4px 14px 14px;
+  border-top: 1px solid var(--line-faint);
+}
+
+/* ---- rows ------------------------------------------------------------- */
+
+.ap-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 11px 0;
+  min-height: 44px;
+}
+.ap-row + .ap-row {
+  border-top: 1px solid var(--line-faint);
+}
+/* Nested rows sit under a sub-heading, so they indent to show the grouping. */
+.ap-row-indent {
+  padding-left: 14px;
+}
+
+.ap-row-text {
+  flex: 1;
+  min-width: 0;
+}
+.ap-row-label {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-1);
+}
+.ap-row-hint {
+  margin-top: 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  line-height: 1.5;
+}
+.ap-row-hint kbd {
+  margin: 0 1px;
+}
+
+.ap-row-control {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ap-sub-label {
+  margin: 14px 0 0;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-4);
+}
+.ap-card-body > .ap-sub-label:first-child {
+  margin-top: 10px;
+}
+.ap-sub-hint {
+  margin: 5px 0 10px;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  line-height: 1.55;
+}
+
+.ap-rule {
+  height: 1px;
+  margin: 14px 0 0;
+  background: var(--line-faint);
+}
+
+.ap-note {
+  margin: 10px 0 0;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  line-height: 1.6;
+}
+.ap-note strong {
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.ap-empty {
+  padding: 14px 10px;
+  text-align: center;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+}
+
+/* ---- advanced disclosure ---------------------------------------------- */
+
+.ap-adv {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-faint);
+}
+.ap-adv-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-3);
+  transition: color var(--t-hover) ease;
+}
+.ap-adv-toggle:hover {
+  color: var(--text-1);
+}
+.ap-adv-toggle svg {
+  color: var(--text-4);
+}
+.ap-adv-body {
+  margin-top: 6px;
+  animation: ap-reveal 200ms var(--ease-out) both;
+}
+
+@keyframes ap-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+/* ---- segmented control ------------------------------------------------ */
+
+.ap-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  padding: 2px;
+  gap: 2px;
+  border-radius: var(--r-md);
+  background: var(--canvas);
+  border: 1px solid var(--line-faint);
+  max-width: 100%;
+}
+.ap-seg-wide {
+  display: flex;
+  width: 100%;
+  margin-bottom: 4px;
+}
+.ap-seg-wide .ap-seg-item {
+  flex: 1;
+  justify-content: center;
+}
+
+.ap-seg-item {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 11px;
+  border-radius: var(--r-sm);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--t-hover) ease, color var(--t-hover) ease;
+}
+.ap-seg-item:hover {
+  color: var(--text-1);
+}
+.ap-seg-item-active {
+  background: var(--surface-hover);
+  color: var(--text-1);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+/* ---- stepper + reset -------------------------------------------------- */
+
+.ap-stepper-wrap {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.ap-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-faint);
+  color: var(--text-3);
+  font-size: var(--fs-xs);
+  transition: background var(--t-hover) ease, color var(--t-hover) ease,
+    border-color var(--t-hover) ease;
+}
+.ap-reset:hover {
+  background: var(--surface-3);
+  border-color: var(--line);
+  color: var(--text-1);
+}
+
+/* ---- font select ------------------------------------------------------ */
+
+.ap-font {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ap-font .st-select {
+  min-width: 172px;
+}
+.ap-font-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  color: var(--text-4);
+  transition: background var(--t-hover) ease, color var(--t-hover) ease;
+}
+.ap-font-clear:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-1);
+}
+
+/* ---- theme rows ------------------------------------------------------- */
+
+.ap-theme-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 8px;
+}
+
+.ap-theme-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 7px 9px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  text-align: left;
+  transition: background var(--t-hover) ease, border-color var(--t-hover) ease;
+}
+.ap-theme-row:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+.ap-theme-row-active {
+  background: var(--accent-wash);
+  border-color: var(--accent-line);
+}
+
+.ap-theme-name {
+  flex: none;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--text-1);
+}
+.ap-theme-desc {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ap-theme-check {
+  flex: none;
+  color: var(--accent);
+}
+
+/* A five-band strip of the theme's own tokens — a live render, since the
+   wrapper carries that theme's data-theme attribute. */
+.ap-swatch {
+  display: flex;
+  flex: none;
+  width: 54px;
+  height: 20px;
+  border-radius: var(--r-xs);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.09);
+}
+.ap-swatch i {
+  flex: 1;
+}
+.ap-sw-bg {
+  background: var(--canvas);
+  flex: 2 !important;
+}
+.ap-sw-chrome {
+  background: var(--surface-3);
+}
+.ap-sw-accent {
+  background: var(--accent);
+}
+.ap-sw-ok {
+  background: var(--ok);
+}
+.ap-sw-info {
+  background: var(--info);
+}
+
+/* ---- search + scheme list -------------------------------------------- */
+
+.ap-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--r-md);
+  background: var(--canvas);
+  border: 1px solid var(--line-faint);
+  color: var(--text-4);
+  transition: border-color var(--t-hover) ease, box-shadow var(--t-hover) ease;
+}
+.ap-search:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.ap-search-input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  font-size: var(--fs-sm);
+}
+.ap-search .icon-btn {
+  width: 20px;
+  height: 20px;
+  flex: none;
+}
+
+.ap-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px 6px;
+  font-size: var(--fs-micro);
+  color: var(--text-4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tall enough to hold every shipped scheme without scrolling. A short inner
+   scroller here would latch the wheel gesture and strand you halfway down the
+   page, so it only overflows if the list ever grows past this. */
+.ap-scheme-list {
+  max-height: 360px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-faint);
+  background: var(--canvas);
+  padding: 4px;
+}
+
+.ap-scheme {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  text-align: left;
+  transition: background var(--t-hover) ease;
+}
+.ap-scheme:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+.ap-scheme-active {
+  background: var(--accent-wash);
+}
+.ap-scheme-active .ap-scheme-name {
+  color: var(--accent-hi);
+}
+.ap-scheme svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.ap-scheme-chips {
+  display: flex;
+  flex: none;
+  width: 52px;
+  height: 16px;
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+.ap-scheme-chips i {
+  flex: 1;
+}
+.ap-scheme-chips i:first-child {
+  flex: 1.6;
+}
+
+.ap-scheme-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- colour field ---------------------------------------------------- */
+
+.ap-color {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ap-color-swatch {
+  position: relative;
+  width: 30px;
+  height: 26px;
+  flex: none;
+  border-radius: var(--r-sm);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  cursor: pointer;
+  overflow: hidden;
+}
+/* The native colour input is the click target but is never seen — the swatch
+   shows the value, so the OS picker opens without a mismatched control. */
+.ap-color-swatch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  border: none;
+  padding: 0;
+}
+.ap-color-hex {
+  width: 96px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: var(--r-sm);
+  background: var(--canvas);
+  border: 1px solid var(--line-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  outline: none;
+  transition: border-color var(--t-hover) ease, box-shadow var(--t-hover) ease;
+}
+.ap-color-hex:focus {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+/* ---- live preview ---------------------------------------------------- */
+
+.ap-preview {
+  margin-top: 8px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line-faint);
+  overflow: hidden;
+}
+.ap-preview-panes {
+  display: flex;
+  align-items: stretch;
+  min-height: 210px;
+}
+.ap-preview-term {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 10px 12px;
+  line-height: 1.6;
+  overflow: hidden;
+  white-space: pre;
+  user-select: none;
+}
+.ap-preview-term span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ap-preview-term-2 {
+  flex: 0 0 34%;
+}
+.ap-preview-divider {
+  flex: none;
+  width: 1px;
+  align-self: stretch;
+}
+.ap-preview-caret {
+  display: inline-block;
+  width: 6px;
+  height: 1em;
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  animation: breathe 1.2s ease-in-out infinite;
+}

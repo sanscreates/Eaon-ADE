@@ -1,0 +1,358 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Workspace tab strip
+
+   Browser-tab grammar in the app's own materials: quiet text until hovered,
+   the active tab reads as raised surface with an accent underline — the same
+   "accent marks the thing in charge" rule the leaf focus ring follows.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.wt-strip {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  flex: none;
+  height: 34px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--line-faint);
+  background: var(--canvas);
+  user-select: none;
+}
+
+/* The tab list scrolls on its own — kept separate from .wt-strip so the "+"
+   menu isn't a descendant of an overflow:hidden ancestor, which would clip
+   its dropdown no matter how high its z-index. */
+.wt-tabs-scroll {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.wt-tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.wt-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 200px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px 0 12px;
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  color: var(--text-3);
+  font-size: var(--fs-sm);
+  cursor: default;
+  white-space: nowrap;
+  transition: background var(--t-hover) ease, color var(--t-hover) ease;
+}
+.wt-tab:hover {
+  background: var(--surface-hover);
+  color: var(--text-2);
+}
+.wt-tab.wt-active {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+/* The underline sits inside the tab so it doesn't fight the strip's border. */
+.wt-tab.wt-active::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.wt-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+}
+.wt-active .wt-icon {
+  color: var(--text-2);
+}
+
+.wt-favicon {
+  width: 13px;
+  height: 13px;
+  border-radius: 2px;
+  object-fit: contain;
+}
+
+.wt-spinner {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line-strong);
+  border-top-color: var(--accent);
+  animation: spin 620ms linear infinite;
+}
+
+.wt-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wt-count {
+  flex: none;
+  min-width: 17px;
+  padding: 0 5px;
+  border-radius: 99px;
+  background: var(--surface-active);
+  color: var(--text-3);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.wt-active .wt-count {
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+
+.wt-rename {
+  width: 120px;
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: var(--surface-1);
+  border: 1px solid var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+  color: var(--text-1);
+  font-size: var(--fs-sm);
+  outline: none;
+}
+
+.wt-new {
+  position: relative;
+  flex: none;
+}
+
+.wt-add {
+  flex: none;
+  margin-bottom: 3px;
+}
+
+.wt-new-menu {
+  min-width: 216px;
+}
+
+.wt-new-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-3);
+}
+
+.wt-new-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* Drop indicator: inset spine on the side the dragged tab will land.
+   Box-shadow, not a pseudo-element — the active underline owns ::after. */
+.wt-drop-before { box-shadow: inset 2px 0 0 var(--accent); }
+.wt-drop-after { box-shadow: inset -2px 0 0 var(--accent); }
+
+@media (prefers-reduced-motion: reduce) {
+  .wt-tab { transition: none; }
+  .wt-spinner { animation: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Tab launcher — a fresh tab asks what you want to open. One click spawns
+   the agent straight into the tab's grid.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.launcher {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: 32px 40px;
+  overflow-y: auto;
+}
+
+.launcher-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  max-width: 460px;
+}
+
+.launcher-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.launcher-title {
+  margin: 0;
+  font-size: calc(22px * var(--ui-scale, 1));
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-1);
+}
+
+.launcher-sub {
+  margin: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.launcher-head .btn {
+  margin-top: 10px;
+}
+
+.launcher-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  gap: 10px;
+  width: 100%;
+  max-width: 600px;
+}
+
+.launcher-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 10px 12px;
+  background: var(--surface-1, var(--n-800));
+  border: 1px solid var(--line-1, var(--n-700));
+  border-radius: var(--radius-md, 10px);
+  cursor: pointer;
+  color: var(--text-1);
+  font: inherit;
+  animation: launcher-in 180ms var(--ease-out, ease-out) both;
+  transition: border-color 140ms ease, transform 140ms ease, background 140ms ease;
+}
+
+.launcher-tile:hover:not(:disabled) {
+  border-color: var(--accent-line);
+  transform: translateY(-1px);
+}
+
+.launcher-tile:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.launcher-tile:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.launcher-tile-dim .launcher-tile-icon,
+.launcher-tile-dim .launcher-tile-name {
+  opacity: 0.45;
+}
+
+.launcher-tile-icon {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.launcher-letter {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.launcher-tile-name {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.launcher-tile-tag {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-3);
+}
+
+.launcher-tile-custom {
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-2);
+}
+
+.launcher-plus {
+  color: var(--text-3);
+}
+
+.launcher-attach {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.launcher-attach-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.launcher-hints {
+  display: flex;
+  gap: 18px;
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+}
+
+.launcher-hints kbd {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  padding: 2px 5px;
+  border: 1px solid var(--line-1, var(--n-700));
+  border-radius: 4px;
+  background: var(--surface-1, var(--n-800));
+}
+
+@keyframes launcher-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .launcher-tile { animation: none; transition: none; }
+}

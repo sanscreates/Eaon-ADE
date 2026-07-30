@@ -1,0 +1,90 @@
+{
+  "name": "eaon-ade",
+  "version": "0.1.0-alpha",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.mjs",
+  "description": "Eaon ADE — an Agentic Development Environment for running parallel CLI agent sessions",
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,magenta \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "tsx watch server/src/index.ts",
+    "dev:client": "npm --prefix client run dev",
+    "build": "npm run build:client && npm run build:server",
+    "build:client": "npm --prefix client run build",
+    "build:server": "node scripts/build-server.mjs",
+    "start": "NODE_ENV=production tsx server/src/index.ts",
+    "app": "npm run build && electron .",
+    "app:fast": "electron .",
+    "dist": "npm run build && electron-builder --mac",
+    "dist:dir": "npm run build && electron-builder --mac --dir",
+    "release": "npm run build && electron-builder --mac --publish always",
+    "test:memory": "npm run build:server && tsx scripts/test-memory.mjs && tsx scripts/test-memory-mcp.mjs",
+    "test:memory:ui": "node scripts/test-memory-ui.mjs",
+    "postinstall": "node scripts/fix-pty-perms.mjs"
+  },
+  "build": {
+    "appId": "ai.eaon.ade",
+    "productName": "Eaon ADE",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**",
+      "server/dist/**",
+      "client/dist/**",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**"
+    ],
+    "npmRebuild": true,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "sanscreates",
+        "repo": "Eaon-ADE"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "build/AppIcon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "title": "Eaon ADE",
+      "window": {
+        "width": 540,
+        "height": 380
+      }
+    }
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "node-pty": "^1.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "concurrently": "^9.1.2",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
