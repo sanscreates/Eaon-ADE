@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened Runtime entitlements for Developer ID distribution.
+
+  Deliberately NOT sandboxed. Eaon ADE opens login shells, walks whatever folder
+  you point a workspace at, and runs the agent binaries already on your PATH.
+  None of that is expressible under App Sandbox, so this ships signed and
+  notarised for direct distribution rather than through the Mac App Store.
+
+  Every entitlement below is here for a reason; do not add more without one.
+-->
+<plist version="1.0">
+  <dict>
+    <!-- V8 compiles JavaScript at runtime. Electron cannot start without these. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+
+    <!-- Electron's helper processes are launched with DYLD_* set. -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+
+    <!--
+      Native modules load their own dylibs: node-pty's pty.node and the ONNX
+      runtime behind local dictation (onnxruntime_binding.node plus
+      libonnxruntime.dylib). Library validation would refuse them.
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+
+    <!-- Voice dictation. Paired with NSMicrophoneUsageDescription in Info.plist. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+  </dict>
+</plist>

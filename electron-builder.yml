@@ -1,0 +1,75 @@
+appId: dev.eaon.ade
+productName: Eaon ADE
+
+# Where the app looks for updates. electron-builder also writes latest-mac.yml
+# next to the artifacts from this, which is the file electron-updater reads.
+publish:
+  provider: github
+  owner: sanscreates
+  repo: Eaon-ADE
+  releaseType: release
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - out/**
+  - package.json
+  - '!**/*.map'
+asarUnpack:
+  # Native modules — must stay real files on disk, not inside the asar archive.
+  - '**/node_modules/node-pty/**'
+  - '**/node_modules/onnxruntime-node/**'
+  - '**/node_modules/sharp/**'
+  - '**/node_modules/@img/**'
+mac:
+  icon: resources/icon.png
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  darkModeSupport: true
+  # Required before Apple will notarise anything.
+  hardenedRuntime: true
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  # Three certificates live in this keychain; name the one meant for shipping
+  # rather than letting the picker guess.
+  # Name only, no "Developer ID Application:" prefix — electron-builder adds it.
+  # The team id in parentheses is what separates this from the two Apple
+  # Development certificates in the same keychain.
+  identity: Vishnu Chada (W9MHT9V982)
+  # Gatekeeper always rejects a build that has not been through Apple yet, so
+  # let the notarise step be the thing that says whether it passed.
+  gatekeeperAssess: false
+  # Off by default so a local build never needs Apple credentials. The release
+  # script turns it on.
+  notarize: false
+  extendInfo:
+    NSMicrophoneUsageDescription:
+      Eaon ADE uses the microphone for voice dictation. Speech is transcribed by a model on
+      this computer and is never uploaded or recorded to disk.
+  # Both native modules ship every platform's binaries. Carry only this one's —
+  # a macOS bundle has no use for Windows .node files, and they are dead weight
+  # in front of a notarisation scan.
+  files:
+    - '!**/node_modules/onnxruntime-node/bin/napi-v6/{win32,linux}/**'
+    - '!**/node_modules/node-pty/prebuilds/{win32-x64,win32-arm64,darwin-x64}/**'
+dmg:
+  # Sign the disk image itself, not just the app inside it. Without this the
+  # image carries a notarisation ticket but no signature, and Gatekeeper's
+  # assessment of the download comes back "no usable signature".
+  sign: true
+
+win:
+  target:
+    - dir
+  files:
+    - '!**/node_modules/onnxruntime-node/bin/napi-v6/{darwin,linux}/**'
+linux:
+  category: Development
+  target:
+    - dir
+  files:
+    - '!**/node_modules/onnxruntime-node/bin/napi-v6/{darwin,win32}/**'

@@ -1,0 +1,196 @@
+/*
+ * The update card.
+ *
+ * Restrained on purpose: it sits in a corner over a grid of running agents, so
+ * it earns attention with one lit edge and a single filling bar rather than
+ * colour and motion everywhere.
+ */
+
+.update-card {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 55;
+  width: 340px;
+  padding: 14px 14px 12px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line-200);
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+
+  opacity: 0;
+  transform: translateY(10px) scale(0.985);
+  transition: opacity 260ms var(--ease), transform 260ms var(--ease),
+    border-color 400ms var(--ease);
+}
+.update-card[data-shown='true'] {
+  opacity: 1;
+  transform: none;
+}
+/* Once it is actually actionable, the accent edge comes up. */
+.update-card[data-ready='true'] {
+  border-color: var(--accent-edge);
+}
+
+[data-reduce-motion='true'] .update-card {
+  transition: none;
+  opacity: 1;
+  transform: none;
+}
+
+/* A soft wash behind the card, only when there is something to install. */
+.update-glow {
+  position: absolute;
+  inset: auto -40% -70% -40%;
+  height: 130px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  filter: blur(48px);
+  pointer-events: none;
+  transition: opacity 600ms var(--ease);
+}
+.update-card[data-ready='true'] .update-glow {
+  opacity: 0.13;
+}
+
+.update-head {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.update-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1px solid var(--line-200);
+  background: var(--ink-200);
+  color: var(--text-lo);
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+.update-card[data-ready='true'] .update-mark {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.update-titles {
+  flex: 1;
+  min-width: 0;
+}
+.update-title {
+  font-size: var(--fs-base);
+  color: var(--text-hi);
+  letter-spacing: -0.005em;
+}
+.update-title b {
+  font-weight: 600;
+}
+.update-sub {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.update-track {
+  position: relative;
+  height: 2px;
+  margin: 12px 0 0;
+  border-radius: 1px;
+  background: var(--ink-400);
+  overflow: hidden;
+}
+.update-fill {
+  display: block;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--accent);
+  transition: width 320ms var(--ease);
+}
+
+/* Collapsed to nothing until asked for, so the card stays one line tall. */
+.update-notes {
+  position: relative;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 260ms var(--ease), margin 260ms var(--ease);
+}
+.update-notes[data-expanded='true'] {
+  max-height: 190px;
+  margin-top: 10px;
+  overflow-y: auto;
+}
+.update-notes p {
+  margin: 0;
+  padding-right: 4px;
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+  color: var(--text-mid);
+  white-space: pre-line;
+}
+
+.update-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.update-actions .spacer {
+  flex: 1;
+}
+.update-actions .btn {
+  height: 30px;
+  padding: 0 13px;
+}
+
+.update-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--fs-micro);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+  color: var(--text-lo);
+  transition: color var(--dur) var(--ease);
+}
+.update-link:hover {
+  color: var(--accent);
+}
+
+/* Titlebar indicator, so a dismissed update is still reachable. */
+.update-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--ink-100);
+}
+
+/* ---- Settings › About ---------------------------------------------------- */
+
+.update-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.update-status {
+  font-size: var(--fs-sm);
+  color: var(--text-lo);
+}
+.update-status b {
+  color: var(--text-hi);
+  font-weight: 600;
+}

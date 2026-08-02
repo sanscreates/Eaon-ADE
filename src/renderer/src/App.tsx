@@ -1,0 +1,321 @@
+import { useEffect, useRef } from 'react'
+import { useActiveWorkspace, useStore } from './store/useStore'
+import { terminals } from './lib/terminals'
+import { applyTheme, resolveTheme } from './lib/theme'
+import { TitleBar } from './components/TitleBar'
+import { WorkspaceRail } from './components/WorkspaceRail'
+import { Launcher } from './components/Launcher'
+import { SetupWizard } from './components/SetupWizard'
+import { TerminalGrid } from './components/TerminalGrid'
+import { SideDock } from './components/SideDock'
+import { CommandPalette } from './components/CommandPalette'
+import { ResumeDialog } from './components/ResumeDialog'
+import { SettingsModal } from './components/SettingsModal'
+import { PresetEditor } from './components/PresetEditor'
+import { Board } from './components/Board'
+import { Vault } from './components/Vault'
+import { DictationHUD } from './components/DictationHUD'
+import { UpdateCard } from './components/UpdateCard'
+import { dictation } from './lib/dictation'
+import { cancelDictation, startDictation, stopDictation, toggleDictation } from './lib/voice'
+
+export function App(): React.JSX.Element {
+  const ready = useStore((s) => s.ready)
+  const hydrate = useStore((s) => s.hydrate)
+  const settings = useStore((s) => s.settings)
+  const railOpen = useStore((s) => s.railOpen)
+  const dockOpen = useStore((s) => s.dockOpen)
+  const surface = useStore((s) => s.surface)
+  const wizard = useStore((s) => s.wizard)
+  const paletteOpen = useStore((s) => s.paletteOpen)
+  const settingsOpen = useStore((s) => s.settingsOpen)
+  const resumeOpen = useStore((s) => s.resumeOpen)
+  const presetEditorId = useStore((s) => s.presetEditorId)
+  const workspace = useActiveWorkspace()
+
+  useEffect(() => {
+    void hydrate()
+  }, [hydrate])
+
+  // ---- terminal plumbing -------------------------------------------------
+  useEffect(() => {
+    const store = useStore.getState
+
+    terminals.init(
+      {
+        onTitle: (paneId, title) => store().patchPane(paneId, { title }),
+        onStatus: (paneId, status) => {
+          const s = store()
+          if (status === 'attention' && !s.settings.bellAttention) return
+          s.patchPane(paneId, { status })
+
+          if (status !== 'attention') return
+          const ws = s.workspaces.find((w) => w.panes.some((p) => p.id === paneId))
+          const pane = ws?.panes.find((p) => p.id === paneId)
+          if (!ws || !pane) return
+          // Only shout when you are not already looking at that pane.
+          if (ws.id === s.activeWorkspaceId && ws.activePaneId === paneId) return
+          s.notify({
+            kind: 'attention',
+            title: `${pane.name} needs you`,
+            text: pane.title ?? `In ${ws.name}`,
+            paneId,
+            workspaceId: ws.id
+          })
+        },
+        onContext: (paneId, contextPct) => store().patchPane(paneId, { contextPct }),
+        onExit: (paneId, code) => {
+          const s = store()
+          s.patchPane(paneId, { status: 'exited' })
+          const ws = s.workspaces.find((w) => w.panes.some((p) => p.id === paneId))
+          const pane = ws?.panes.find((p) => p.id === paneId)
+          if (pane && code !== 0) {
+            s.notify({
+              kind: 'error',
+              title: `${pane.name} exited`,
+              text: `The shell stopped with code ${code}.`,
+              paneId,
+              workspaceId: ws?.id
+            })
+          }
+        }
+      },
+      useStore.getState().settings
+    )
+
+    const offData = window.eaon.pty.onData((paneId, data) => terminals.receive(paneId, data))
+    const offExit = window.eaon.pty.onExit((paneId, code) => terminals.markExited(paneId, code))
+    return () => {
+      offData()
+      offExit()
+    }
+  }, [])
+
+  // ---- auto update -------------------------------------------------------
+  useEffect(() => {
+    const store = useStore.getState
+    window.eaon.update.state().then((s) => store().setUpdate(s))
+    return window.eaon.update.onState((s) => store().setUpdate(s))
+  }, [])
+
+  // ---- voice dictation ---------------------------------------------------
+  useEffect(() => {
+    const store = useStore.getState
+    const offProgress = window.eaon.stt.onProgress((p) => store().setSttProgress(p))
+    const offState = window.eaon.stt.onState((s) => store().setSttEngine(s))
+    return () => {
+      offProgress()
+      offState()
+      // Never leave the microphone open behind a reload.
+      cancelDictation()
+    }
+  }, [])
+
+  useEffect(() => {
+    /**
+     * Hold-to-talk on a modifier needs a moment's patience. Right ⌘ is also the
+     * first half of Right ⌘ + C, so dictation waits to see whether a second key
+     * follows before it opens the microphone.
+     */
+    const ARM_MS = 180
+    const hold = { armed: false, open: false, timer: 0 }
+
+    const disarm = (): void => {
+      if (hold.timer) window.clearTimeout(hold.timer)
+      hold.timer = 0
+      hold.armed = false
+    }
+
+    const release = (): void => {
+      disarm()
+      if (!hold.open) return
+      hold.open = false
+      void stopDictation()
+    }
+
+    const onKeyDown = (e: KeyboardEvent): void => {
+      const s = useStore.getState()
+
+      if (e.key === 'Escape' && dictation.active) {
+        // Beat the Conductor and the modals to it — while the microphone is
+        // live, Escape means "throw this away", not "close that panel".
+        e.preventDefault()
+        e.stopPropagation()
+        hold.open = false
+        disarm()
+        cancelDictation()
+        return
+      }
+
+      // The chord toggles, for dictating something longer than you want to hold
+      // a key for.
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault()
+        // Immediate: the app's other shortcut handler is bound to window too,
+        // and plain stopPropagation does not stop a sibling on the same target.
+        e.stopImmediatePropagation()
+        void toggleDictation()
+        return
+      }
+
+      const holdKey = s.settings.voiceHoldKey
+      if (holdKey && e.code === holdKey) {
+        // Auto-repeat fires continuously while a key is held; only the first
+        // press starts anything.
+        if (e.repeat || hold.armed || hold.open) return
+        if (holdKey === 'F5') e.preventDefault()
+        hold.armed = true
+        hold.timer = window.setTimeout(() => {
+          hold.timer = 0
+          if (!hold.armed) return
+          hold.armed = false
+          hold.open = true
+          void startDictation()
+        }, ARM_MS)
+        return
+      }
+
+      // Any other key during the arming window means this was a shortcut, not
+      // a request to dictate.
+      if (hold.armed) disarm()
+    }
+
+    const onKeyUp = (e: KeyboardEvent): void => {
+      const holdKey = useStore.getState().settings.voiceHoldKey
+      if (holdKey && e.code === holdKey) release()
+    }
+
+    // A keyup can be missed entirely if the window loses focus mid-hold, which
+    // would otherwise leave the microphone open indefinitely.
+    const onBlur = (): void => release()
+
+    window.addEventListener('keydown', onKeyDown, true)
+    window.addEventListener('keyup', onKeyUp, true)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown, true)
+      window.removeEventListener('keyup', onKeyUp, true)
+      window.removeEventListener('blur', onBlur)
+      release()
+    }
+  }, [])
+
+  // ---- theme -------------------------------------------------------------
+  useEffect(() => {
+    const theme = resolveTheme(settings)
+    applyTheme(theme)
+    terminals.applyPalette(theme.terminal)
+    document.documentElement.dataset.reduceMotion = String(settings.reduceMotion)
+  }, [settings.themeId, settings.accentOverride, settings.reduceMotion, settings])
+
+  // ---- global shortcuts --------------------------------------------------
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const s = useStore.getState()
+      const mod = e.metaKey || e.ctrlKey
+      if (!mod) return
+      const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId) ?? null
+      const key = e.key.toLowerCase()
+
+      const take = (fn: () => void): void => {
+        e.preventDefault()
+        e.stopPropagation()
+        fn()
+      }
+
+      // Terminal font size, the way every terminal binds it.
+      if (key === '=' || key === '+') {
+        return take(() => s.updateSettings({ fontSize: Math.min(22, s.settings.fontSize + 1) }))
+      }
+      if (key === '-' || key === '_') {
+        return take(() => s.updateSettings({ fontSize: Math.max(8, s.settings.fontSize - 1) }))
+      }
+      if (key === '0') return take(() => s.updateSettings({ fontSize: 12 }))
+
+      if (key === 'k') return take(() => s.setPalette(!s.paletteOpen))
+      if (key === 't') return take(() => s.openWizard('grid'))
+      if (key === 'b' && !e.shiftKey) return take(() => s.toggleRail())
+      if (key === 'j') return take(() => s.toggleConductor())
+      if (key === ',') return take(() => s.setSettingsOpen(!s.settingsOpen))
+      if (key === '/') return take(() => s.setResumeOpen(true))
+
+      if (ws) {
+        // Shift-D is dictation, handled above; plain D adds a pane.
+        if (key === 'd' && !e.shiftKey) return take(() => s.addPane(ws.id))
+        if (key === 'e' && ws.activePaneId) {
+          return take(() => s.zoomPane(ws.id, ws.zoomedPaneId ? null : ws.activePaneId))
+        }
+        if (key === 'w' && ws.activePaneId) {
+          return take(() => s.closePane(ws.id, ws.activePaneId as string))
+        }
+        if (key === 'f' && ws.activePaneId) {
+          // Leave find to the pane itself; it owns its own search box.
+          return
+        }
+        const num = Number(e.key)
+        if (!Number.isNaN(num) && num >= 1 && num <= 9 && ws.panes[num - 1]) {
+          return take(() => s.focusPane(ws.id, ws.panes[num - 1].id))
+        }
+      }
+
+      if (e.shiftKey && key === 'b') return take(() => s.toggleDock())
+    }
+
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [])
+
+  // Panels changing width means every terminal needs to re-measure.
+  useEffect(() => {
+    const id = window.setTimeout(() => terminals.fitAll(), 220)
+    return () => window.clearTimeout(id)
+  }, [railOpen, dockOpen, surface, wizard])
+
+  // Dismissing a dialog should hand the keyboard back to the terminal.
+  const anyOverlay = paletteOpen || settingsOpen || resumeOpen || presetEditorId !== null
+  const hadOverlay = useRef(false)
+  useEffect(() => {
+    if (hadOverlay.current && !anyOverlay && workspace?.activePaneId) {
+      terminals.focus(workspace.activePaneId)
+    }
+    hadOverlay.current = anyOverlay
+  }, [anyOverlay, workspace?.activePaneId])
+
+  if (!ready) {
+    return (
+      <div className="app">
+        <div className="empty" style={{ height: '100%' }}>
+          <span className="eyebrow">Starting Eaon</span>
+        </div>
+      </div>
+    )
+  }
+
+  const stage = (): React.JSX.Element => {
+    // Settings is a place you go, not a dialog you dismiss. It takes the stage
+    // and holds it until you close it, with the workspace rail still alongside.
+    if (settingsOpen) return <SettingsModal />
+    if (wizard) return <SetupWizard />
+    if (surface === 'board') return <Board />
+    if (surface === 'vault') return <Vault />
+    if (workspace) return <TerminalGrid workspace={workspace} />
+    return <Launcher />
+  }
+
+  return (
+    <div className="app">
+      <TitleBar />
+      <div className="body">
+        {railOpen && <WorkspaceRail />}
+        <main className="stage">{stage()}</main>
+        {dockOpen && <SideDock workspace={workspace} />}
+      </div>
+
+      <UpdateCard />
+      <DictationHUD />
+      <CommandPalette />
+      <ResumeDialog />
+      <PresetEditor />
+    </div>
+  )
+}

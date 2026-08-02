@@ -1,0 +1,180 @@
+/* Preview browser in the side panel. */
+
+.dock-slot {
+  height: 100%;
+  min-height: 0;
+}
+.dock-slot[hidden] {
+  display: none;
+}
+
+.browser {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.browser-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--line-100);
+  flex: 0 0 auto;
+}
+
+.browser-address {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line-200);
+  background: var(--ink-100);
+  color: var(--text-hi);
+  font-size: var(--fs-sm);
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+.browser-address:hover {
+  border-color: var(--line-300);
+}
+.browser-address:focus {
+  outline: none;
+  border-color: var(--accent-edge);
+  background: var(--ink-050);
+}
+.browser-address::placeholder {
+  color: var(--text-dim);
+}
+
+/*
+ * Ports that are actually listening. This is the panel's front door: in a tool
+ * whose whole job is watching agents build something, the address you want is
+ * nearly always a dev server that just came up.
+ */
+.browser-ports {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line-100);
+  color: var(--text-dim);
+  flex: 0 0 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.browser-ports::-webkit-scrollbar {
+  display: none;
+}
+
+.browser-ports-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-right: 2px;
+}
+
+.browser-port {
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+.browser-port:hover {
+  color: var(--text-hi);
+  border-color: var(--line-300);
+}
+.browser-port[data-on='true'] {
+  color: var(--accent);
+  border-color: var(--accent-edge);
+  background: var(--accent-wash);
+}
+
+.browser-view {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  /* White, not the theme surface: a page with no background of its own should
+     look the way it will look in a real browser, not tinted by the app. */
+  background: #fff;
+}
+
+.browser-view webview {
+  border: 0;
+}
+
+/* An indeterminate sliver rather than a spinner — it belongs to the edge of the
+   viewport the way a browser's does, and does not sit on top of the page. */
+.browser-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  overflow: hidden;
+  background: transparent;
+}
+.browser-loading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 34%;
+  background: var(--accent);
+  animation: browser-sweep 1.05s var(--ease) infinite;
+}
+
+@keyframes browser-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(392%);
+  }
+}
+
+.browser-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 28px;
+  text-align: center;
+  background: var(--ink-100);
+  color: var(--text-mid);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+.browser-error strong {
+  font-weight: 400;
+  color: var(--text-hi);
+  max-width: 34ch;
+}
+
+.browser-error-actions {
+  display: flex;
+  gap: 8px;
+}
+
+[data-reduce-motion='true'] .browser-loading::after {
+  animation: none;
+  width: 100%;
+  opacity: 0.4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .browser-loading::after {
+    animation: none;
+    width: 100%;
+    opacity: 0.4;
+  }
+}

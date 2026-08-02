@@ -1,0 +1,329 @@
+/* Application shell: title bar, workspace rail, side dock. */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--ink-000);
+}
+
+/* ---- title bar -------------------------------------------------------- */
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 var(--titlebar-h);
+  height: var(--titlebar-h);
+  padding: 0 12px 0 var(--titlebar-pad-left, 88px);
+  background: var(--ink-100);
+  border-bottom: 1px solid var(--line-100);
+  -webkit-app-region: drag;
+}
+.titlebar button,
+.titlebar input,
+.titlebar .no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.titlebar-brand .wordmark {
+  font-size: var(--fs-sm);
+  color: var(--text-hi);
+}
+.titlebar-version {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+
+.titlebar-center {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-lo);
+}
+.titlebar-center .crumb-active {
+  color: var(--text-mid);
+  font-weight: 500;
+}
+.titlebar-center .crumb-path {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 340px;
+}
+
+.titlebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.badge-dot {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--attention);
+  color: var(--on-attention);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+}
+.has-badge {
+  position: relative;
+}
+
+/* ---- body ------------------------------------------------------------- */
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ink-000);
+}
+
+/* ---- workspace rail --------------------------------------------------- */
+
+.rail {
+  flex: 0 0 var(--rail-w);
+  width: var(--rail-w);
+  display: flex;
+  flex-direction: column;
+  background: var(--ink-050);
+  border-right: 1px solid var(--line-100);
+}
+
+.rail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 10px 0 16px;
+}
+.rail-head .eyebrow {
+  flex: 1;
+}
+.rail-count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+
+.rail-list {
+  flex: 1;
+  min-height: 0;
+  padding: 2px 8px 8px;
+  overflow-y: auto;
+}
+
+.ws-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 38px;
+  padding: 0 8px 0 10px;
+  margin-bottom: 2px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  color: var(--text-mid);
+  text-align: left;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.ws-item:hover {
+  background: var(--ink-100);
+  color: var(--text-hi);
+}
+.ws-item[data-active='true'] {
+  background: var(--ink-200);
+  border-color: var(--line-200);
+  color: var(--text-hi);
+}
+.ws-item[data-active='true']::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--hue, var(--accent));
+}
+
+.ws-glyph {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--hue, var(--accent));
+  flex: 0 0 auto;
+}
+
+.ws-glyph svg {
+  display: block;
+}
+.ws-name {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ws-count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-lo);
+  background: var(--ink-300);
+  border-radius: 9px;
+  padding: 1px 6px;
+}
+.ws-attention {
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: var(--attention);
+  color: var(--on-attention);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  padding: 0 4px;
+}
+.ws-close {
+  display: none;
+  color: var(--text-lo);
+}
+.ws-item:hover .ws-close,
+.ws-item[data-active='true'] .ws-close {
+  display: grid;
+}
+.ws-close:hover {
+  color: var(--danger);
+}
+
+.rail-foot {
+  padding: 8px;
+  border-top: 1px solid var(--line-100);
+  display: grid;
+  gap: 4px;
+}
+
+.rail-action {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--r-md);
+  color: var(--text-lo);
+  font-size: var(--fs-sm);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.rail-action:hover {
+  background: var(--ink-100);
+  color: var(--text-hi);
+}
+.rail-action[data-on='true'] {
+  color: var(--accent);
+}
+
+/* ---- side dock -------------------------------------------------------- */
+
+.dock {
+  flex: 0 0 var(--dock-w);
+  width: var(--dock-w);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--ink-050);
+  border-left: 1px solid var(--line-100);
+}
+
+.dock-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 44px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line-100);
+}
+
+.dock-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 11px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  color: var(--text-lo);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  transition: all var(--dur) var(--ease);
+}
+.dock-tab:hover {
+  color: var(--text-hi);
+  background: var(--ink-200);
+}
+.dock-tab[data-on='true'] {
+  color: var(--accent);
+  background: var(--accent-wash);
+  border-color: var(--accent-edge);
+}
+.dock-tab:disabled {
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+.dock-tab:disabled:hover {
+  background: none;
+}
+
+.dock-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dock-resizer {
+  flex: 0 0 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background var(--dur) var(--ease);
+}
+.dock-resizer:hover,
+.dock-resizer[data-dragging='true'] {
+  background: var(--accent-edge);
+}

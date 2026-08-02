@@ -1,91 +1,58 @@
 {
   "name": "eaon-ade",
-  "version": "0.1.0-alpha",
+  "version": "1.0.0",
+  "description": "Eaon ADE — an agentic development environment. Run many CLI coding agents side by side.",
+  "main": "./out/main/index.js",
+  "author": "Eaon",
+  "license": "MIT",
   "private": true,
-  "type": "module",
-  "main": "electron/main.mjs",
-  "description": "Eaon ADE — an Agentic Development Environment for running parallel CLI agent sessions",
   "scripts": {
-    "dev": "concurrently -n server,client -c blue,magenta \"npm:dev:server\" \"npm:dev:client\"",
-    "dev:server": "tsx watch server/src/index.ts",
-    "dev:client": "npm --prefix client run dev",
-    "build": "npm run build:client && npm run build:server",
-    "build:client": "npm --prefix client run build",
-    "build:server": "node scripts/build-server.mjs",
-    "start": "NODE_ENV=production tsx server/src/index.ts",
-    "app": "npm run build && electron .",
-    "app:fast": "electron .",
-    "dist": "npm run build && electron-builder --mac",
-    "dist:dir": "npm run build && electron-builder --mac --dir",
-    "release": "npm run build && electron-builder --mac --publish always",
-    "test:memory": "npm run build:server && tsx scripts/test-memory.mjs && tsx scripts/test-memory-mcp.mjs",
-    "test:memory:ui": "node scripts/test-memory-ui.mjs",
-    "postinstall": "node scripts/fix-pty-perms.mjs"
-  },
-  "build": {
-    "appId": "ai.eaon.ade",
-    "productName": "Eaon ADE",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "electron/**",
-      "server/dist/**",
-      "client/dist/**",
-      "package.json"
-    ],
-    "asarUnpack": [
-      "node_modules/node-pty/**"
-    ],
-    "npmRebuild": true,
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "sanscreates",
-        "repo": "Eaon-ADE"
-      }
-    ],
-    "mac": {
-      "category": "public.app-category.developer-tools",
-      "icon": "build/AppIcon.icns",
-      "identity": null,
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "arm64"
-          ]
-        }
-      ]
-    },
-    "dmg": {
-      "title": "Eaon ADE",
-      "window": {
-        "width": 540,
-        "height": 380
-      }
-    }
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "build": "npm run typecheck && electron-vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "rebuild": "electron-rebuild -f -w node-pty",
+    "postinstall": "electron-builder install-app-deps",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "icon": "node scripts/make-icon.mjs 1024 resources/icon.png",
+    "dist:mac:release": "npm run dist:mac && node scripts/notarize-mac.mjs",
+    "verify:mac": "node scripts/verify-mac.mjs",
+    "notarize:mac": "node scripts/notarize-mac.mjs"
   },
   "dependencies": {
-    "express": "^4.21.2",
-    "node-pty": "^1.0.0",
-    "ws": "^8.18.0"
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.9",
+    "@codemirror/lang-javascript": "^6.2.4",
+    "@codemirror/lang-json": "^6.0.2",
+    "@codemirror/lang-markdown": "^6.3.4",
+    "@codemirror/lang-python": "^6.2.1",
+    "@codemirror/lang-rust": "^6.0.2",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.38.6",
+    "@huggingface/transformers": "^4.2.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-search": "^0.16.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/addon-webgl": "^0.19.0",
+    "@xterm/xterm": "^6.0.0",
+    "codemirror": "^6.0.2",
+    "electron-updater": "^6.8.9",
+    "lucide-react": "^1.28.0",
+    "node-pty": "^1.1.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/node": "^22.10.0",
-    "@types/ws": "^8.5.13",
-    "concurrently": "^9.1.2",
+    "@electron/rebuild": "^4.2.0",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.2.0",
     "electron": "^43.2.0",
     "electron-builder": "^26.15.3",
-    "esbuild": "^0.28.1",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "electron-vite": "^5.0.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.3.6"
   }
 }

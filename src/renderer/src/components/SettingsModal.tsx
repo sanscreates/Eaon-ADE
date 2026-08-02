@@ -1,0 +1,493 @@
+import { useEffect, useState } from 'react'
+import {
+  Bot,
+  Info,
+  Keyboard,
+  Mic,
+  Minus,
+  Palette,
+  Plus,
+  Terminal,
+  X
+} from 'lucide-react'
+import { ACCENT_OVERRIDES, THEMES } from '@shared/themes'
+import { useStore } from '../store/useStore'
+import { MOD } from '../lib/util'
+import { ThemeCard } from './ThemeCard'
+import { VoicePanel } from './VoicePanel'
+import { UpdateSetting } from './UpdateSetting'
+
+type SectionId = 'appearance' | 'terminal' | 'agents' | 'voice' | 'shortcuts' | 'about'
+
+const SECTIONS: { id: SectionId; label: string; icon: typeof Palette }[] = [
+  { id: 'appearance', label: 'Appearance', icon: Palette },
+  { id: 'terminal', label: 'Terminal', icon: Terminal },
+  { id: 'agents', label: 'Agents', icon: Bot },
+  { id: 'voice', label: 'Voice', icon: Mic },
+  { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
+  { id: 'about', label: 'About', icon: Info }
+]
+
+const SHORTCUTS: { keys: string; what: string }[] = [
+  { keys: `${MOD}K`, what: 'Commands' },
+  { keys: `${MOD}T`, what: 'New workspace' },
+  { keys: `${MOD}D`, what: 'Add a pane' },
+  { keys: `${MOD}W`, what: 'Close the focused pane' },
+  { keys: `${MOD}E`, what: 'Fill the grid with the focused pane' },
+  { keys: `${MOD}1`, what: 'Jump to a pane (through ' + MOD + '9)' },
+  { keys: `${MOD}J`, what: 'Conductor' },
+  { keys: `${MOD}B`, what: 'Workspaces sidebar' },
+  { keys: `${MOD}⇧B`, what: 'Side panel' },
+  { keys: `${MOD}/`, what: 'Resume a session' },
+  { keys: 'Hold Right ⌘', what: 'Dictate while held' },
+  { keys: `${MOD}⇧D`, what: 'Dictate, start and stop by hand' },
+  { keys: 'Esc', what: 'Discard what you are dictating' },
+  { keys: `${MOD},`, what: 'Settings' },
+  { keys: `${MOD}C / ${MOD}V`, what: 'Copy and paste inside a terminal' }
+]
+
+function Toggle({
+  on,
+  onChange,
+  label
+}: {
+  on: boolean
+  onChange: (v: boolean) => void
+  label: string
+}): React.JSX.Element {
+  return (
+    <button
+      className="toggle"
+      data-on={on}
+      onClick={() => onChange(!on)}
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+    >
+      <i />
+    </button>
+  )
+}
+
+function Row({
+  name,
+  desc,
+  children
+}: {
+  name: string
+  desc: string
+  children: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <div className="setting-row">
+      <div className="setting-text">
+        <div className="setting-name">{name}</div>
+        <div className="setting-desc">{desc}</div>
+      </div>
+      <div className="setting-control">{children}</div>
+    </div>
+  )
+}
+
+export function SettingsModal(): React.JSX.Element | null {
+  const open = useStore((s) => s.settingsOpen)
+  const setOpen = useStore((s) => s.setSettingsOpen)
+  const settings = useStore((s) => s.settings)
+  const update = useStore((s) => s.updateSettings)
+  const agents = useStore((s) => s.agents)
+  const sys = useStore((s) => s.appVersion)
+
+  const [section, setSection] = useState<SectionId>('appearance')
+  const [statePath, setStatePath] = useState('')
+
+  useEffect(() => {
+    if (open) window.eaon.state.path().then(setStatePath)
+  }, [open])
+
+  // Escape leaves Settings, the same as the close button.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return
+      // A dictation session or an open menu gets first refusal on Escape.
+      if (e.defaultPrevented) return
+      setOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, setOpen])
+
+  if (!open) return null
+
+  const dark = THEMES.filter((t) => t.mode === 'dark')
+  const light = THEMES.filter((t) => t.mode === 'light')
+
+  const current = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]
+
+  return (
+    <div className="settings-surface" role="region" aria-label="Settings">
+      <nav className="settings-nav" aria-label="Settings sections">
+        <p className="eyebrow settings-nav-title">Settings</p>
+        {SECTIONS.map((s) => {
+          const Icon = s.icon
+          return (
+            <button
+              className="settings-nav-item"
+              key={s.id}
+              data-on={section === s.id}
+              onClick={() => setSection(s.id)}
+            >
+              <Icon size={14} />
+              {s.label}
+            </button>
+          )
+        })}
+        <span className="settings-nav-foot mono">
+          {THEMES.find((t) => t.id === settings.themeId)?.name ?? 'Custom'} · v{sys}
+        </span>
+      </nav>
+
+      <div className="settings-main">
+        <header className="settings-head">
+          <h1 className="settings-title">{current.label}</h1>
+          <span className="spacer" />
+          <button
+            className="icon-btn"
+            onClick={() => setOpen(false)}
+            aria-label="Close settings"
+            title="Close settings (Esc)"
+          >
+            <X size={16} />
+          </button>
+        </header>
+
+        <div className="settings-pane">
+            {section === 'appearance' && (
+              <>
+                <p className="settings-lede">
+                  Every surface, accent and terminal colour comes from the theme. Pick one and the
+                  whole window follows.
+                </p>
+
+                <div className="section-head">
+                  <span className="eyebrow">Theme</span>
+                  <span className="section-note">{THEMES.length} available</span>
+                </div>
+
+                <p className="eyebrow" style={{ margin: '4px 0 8px' }}>
+                  Dark
+                </p>
+                <div className="theme-grid">
+                  {dark.map((t) => (
+                    <ThemeCard
+                      key={t.id}
+                      theme={t}
+                      active={settings.themeId === t.id}
+                      onPick={() => update({ themeId: t.id })}
+                    />
+                  ))}
+                </div>
+
+                <p className="eyebrow" style={{ margin: '22px 0 8px' }}>
+                  Light
+                </p>
+                <div className="theme-grid">
+                  {light.map((t) => (
+                    <ThemeCard
+                      key={t.id}
+                      theme={t}
+                      active={settings.themeId === t.id}
+                      onPick={() => update({ themeId: t.id })}
+                    />
+                  ))}
+                </div>
+
+                <div style={{ marginTop: 24 }}>
+                  <Row
+                    name="Accent"
+                    desc="Override the theme's accent. Status colours never change — running stays one colour, waiting-on-you stays another."
+                  >
+                    <div className="swatches">
+                      <button
+                        className="swatch swatch-auto"
+                        data-on={settings.accentOverride === null}
+                        onClick={() => update({ accentOverride: null })}
+                        aria-label="Follow the theme"
+                        title="Follow the theme"
+                      />
+                      {ACCENT_OVERRIDES.map((a) => (
+                        <button
+                          className="swatch"
+                          key={a.id}
+                          data-on={settings.accentOverride === a.id}
+                          style={{ background: a.hex }}
+                          onClick={() => update({ accentOverride: a.id })}
+                          aria-label={`Accent ${a.label}`}
+                          title={a.label}
+                        />
+                      ))}
+                    </div>
+                  </Row>
+
+                  <Row name="Reduce motion" desc="Turns off pulsing dots and panel animations.">
+                    <Toggle
+                      on={settings.reduceMotion}
+                      onChange={(v) => update({ reduceMotion: v })}
+                      label="Reduce motion"
+                    />
+                  </Row>
+                </div>
+              </>
+            )}
+
+            {section === 'terminal' && (
+              <>
+                <p className="settings-lede">
+                  These apply to every open pane straight away — no restart, no reconnect.
+                </p>
+
+                <Row name="Font size" desc="Smaller text fits more agents on screen.">
+                  <div className="stepper-num">
+                    <button
+                      className="icon-btn"
+                      onClick={() => update({ fontSize: Math.max(8, settings.fontSize - 1) })}
+                      aria-label="Smaller"
+                    >
+                      <Minus size={12} />
+                    </button>
+                    <span>{settings.fontSize}px</span>
+                    <button
+                      className="icon-btn"
+                      onClick={() => update({ fontSize: Math.min(22, settings.fontSize + 1) })}
+                      aria-label="Larger"
+                    >
+                      <Plus size={12} />
+                    </button>
+                  </div>
+                </Row>
+
+                <Row name="Line height" desc="Breathing room between rows.">
+                  <select
+                    className="select"
+                    value={settings.lineHeight}
+                    onChange={(e) => update({ lineHeight: Number(e.target.value) })}
+                  >
+                    {[1, 1.15, 1.35, 1.5, 1.7].map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </Row>
+
+                <Row name="Font" desc="Any monospace family installed on this machine.">
+                  <input
+                    className="select mono"
+                    style={{ width: 230 }}
+                    value={settings.fontFamily}
+                    spellCheck={false}
+                    onChange={(e) => update({ fontFamily: e.target.value })}
+                    aria-label="Terminal font"
+                  />
+                </Row>
+
+                <Row name="Cursor" desc="Shape and blink.">
+                  <select
+                    className="select"
+                    value={settings.cursorStyle}
+                    onChange={(e) =>
+                      update({ cursorStyle: e.target.value as 'block' | 'bar' | 'underline' })
+                    }
+                  >
+                    <option value="bar">Bar</option>
+                    <option value="block">Block</option>
+                    <option value="underline">Underline</option>
+                  </select>
+                  <Toggle
+                    on={settings.cursorBlink}
+                    onChange={(v) => update({ cursorBlink: v })}
+                    label="Cursor blink"
+                  />
+                </Row>
+
+                <Row name="Scrollback" desc="Lines kept per pane. More lines use more memory.">
+                  <select
+                    className="select"
+                    value={settings.scrollback}
+                    onChange={(e) => update({ scrollback: Number(e.target.value) })}
+                  >
+                    {[2000, 5000, 8000, 20000, 50000].map((v) => (
+                      <option key={v} value={v}>
+                        {v.toLocaleString()}
+                      </option>
+                    ))}
+                  </select>
+                </Row>
+
+                <Row name="Shell" desc="Leave blank to use your login shell.">
+                  <input
+                    className="select mono"
+                    style={{ width: 180 }}
+                    value={settings.shell}
+                    placeholder="/bin/zsh"
+                    spellCheck={false}
+                    onChange={(e) => update({ shell: e.target.value })}
+                    aria-label="Shell"
+                  />
+                </Row>
+              </>
+            )}
+
+            {section === 'agents' && (
+              <>
+                <p className="settings-lede">
+                  Eaon ADE starts a shell and types the agent's command into it. Nothing is wrapped or
+                  intercepted.
+                </p>
+
+                <Row name="Default agent" desc="Pre-selected for new workspaces and new panes.">
+                  <select
+                    className="select"
+                    value={settings.defaultAgentId}
+                    onChange={(e) => update({ defaultAgentId: e.target.value })}
+                  >
+                    {agents.map((a) => (
+                      <option key={a.id} value={a.id} disabled={a.available === false}>
+                        {a.label}
+                        {a.available === false ? ' (not installed)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </Row>
+
+                <Row
+                  name="Terminal bell marks a pane"
+                  desc="Agents ring the bell when they need a decision. Turn this off to stop the highlight."
+                >
+                  <Toggle
+                    on={settings.bellAttention}
+                    onChange={(v) => update({ bellAttention: v })}
+                    label="Bell marks a pane"
+                  />
+                </Row>
+
+                <Row
+                  name="Ask before closing a workspace"
+                  desc="Closing ends every session inside it."
+                >
+                  <Toggle
+                    on={settings.confirmClose}
+                    onChange={(v) => update({ confirmClose: v })}
+                    label="Ask before closing"
+                  />
+                </Row>
+
+                <div className="section-head" style={{ marginTop: 22 }}>
+                  <span className="eyebrow">Found on this machine</span>
+                </div>
+                <div style={{ display: 'grid', gap: 7 }}>
+                  {agents
+                    .filter((a) => a.bin)
+                    .map((a) => (
+                      <div
+                        key={a.id}
+                        style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12 }}
+                      >
+                        <span
+                          style={{
+                            width: 6,
+                            height: 6,
+                            borderRadius: 3,
+                            background: a.available ? 'var(--live)' : 'var(--text-dim)'
+                          }}
+                        />
+                        <span
+                          style={{ color: a.available ? 'var(--text-mid)' : 'var(--text-dim)' }}
+                        >
+                          {a.label}
+                        </span>
+                        <span className="chip mono" style={{ marginLeft: 'auto' }}>
+                          {a.available ? a.bin : 'not on PATH'}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </>
+            )}
+
+            {section === 'voice' && <VoicePanel />}
+
+            {section === 'shortcuts' && (
+              <>
+                <p className="settings-lede">
+                  Inside a pane the clipboard keys belong to the terminal. Everything else below
+                  belongs to Eaon ADE.
+                </p>
+                <div className="shortcut-list">
+                  {SHORTCUTS.map((s) => (
+                    <div className="shortcut-row" key={s.keys}>
+                      <span className="kbd">{s.keys}</span>
+                      <span>{s.what}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {section === 'about' && (
+              <>
+                <p className="settings-lede">
+                  Eaon ADE {sys}. Everything runs on this machine — no account, no telemetry, no update
+                  pings.
+                </p>
+
+                <Row
+                  name="Updates"
+                  desc="Checked on launch and every few hours. New versions download in the background and install when you restart."
+                >
+                  <UpdateSetting />
+                </Row>
+
+                <Row name="Where your settings live" desc="Workspaces, presets, board and vault.">
+                  <span className="chip mono" title={statePath} style={{ maxWidth: 260 }}>
+                    <span
+                      style={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        direction: 'rtl'
+                      }}
+                    >
+                      {statePath}
+                    </span>
+                  </span>
+                </Row>
+
+                <Row
+                  name="Start over"
+                  desc="Deletes every workspace, preset, board card and vault note."
+                >
+                  <button
+                    className="btn"
+                    onClick={async () => {
+                      if (!window.confirm('Reset every workspace, preset and setting?')) return
+                      await window.eaon.state.reset()
+                      window.location.reload()
+                    }}
+                  >
+                    Reset everything
+                  </button>
+                </Row>
+
+                <p className="setting-desc" style={{ marginTop: 20, lineHeight: 1.7 }}>
+                  Dracula, Gruvbox, Nord, Tokyo Night, Catppuccin, One Dark and Rosé Pine palettes
+                  are reproduced from their MIT-licensed projects. See LEGAL.md for the full
+                  attribution list.
+                </p>
+              </>
+            )}
+        </div>
+      </div>
+    </div>
+  )
+}

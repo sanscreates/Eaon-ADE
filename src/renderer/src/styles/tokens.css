@@ -1,0 +1,132 @@
+/*
+ * Eaon design tokens.
+ *
+ * Everything below is a fallback for first paint — the active theme overwrites
+ * these on :root at runtime (see lib/theme.ts). The values here are the default
+ * "Signal" theme, so a cold start never flashes an unstyled window.
+ *
+ * Two colours carry meaning in every theme: --live means an agent is working,
+ * --attention means it is waiting on you. Nothing else may use --attention.
+ */
+
+:root {
+  /* Surfaces, back to front. */
+  --ink-000: #090b0e;
+  --ink-050: #0c0f13;
+  --ink-100: #10141a;
+  --ink-200: #14181f;
+  --ink-300: #1a1f27;
+  --ink-400: #222833;
+  --ink-500: #2b323e;
+
+  --line-100: #1c222a;
+  --line-200: #262d37;
+  --line-300: #333c48;
+
+  --text-hi: #e9edf3;
+  --text-mid: #98a3b3;
+  --text-lo: #5d6776;
+  --text-dim: #414b58;
+
+  --accent: #4de1c1;
+  --accent-dim: #2b8d7c;
+  --accent-wash: rgba(77, 225, 193, 0.1);
+  --accent-edge: rgba(77, 225, 193, 0.42);
+  /* Text that sits on top of --accent. */
+  --on-accent: #06110f;
+
+  --live: #4de1c1;
+  --attention: #f5a65b;
+  --on-attention: #1a1105;
+  --danger: #f0565c;
+
+  /* Modal backdrop and the floating conductor / menu surface. */
+  --scrim: rgba(9, 11, 14, 0.72);
+  --glass: rgba(26, 31, 39, 0.94);
+
+  /*
+   * Workspace identity hues. Deliberately fixed across themes — you should be
+   * able to recognise a workspace by its colour no matter how the app is
+   * painted.
+   */
+  --hue-aqua: #4de1c1;
+  --hue-azure: #5b8cff;
+  --hue-violet: #a78bfa;
+  --hue-amber: #f5a65b;
+  --hue-rose: #f472b6;
+  --hue-lime: #9fe05f;
+
+  /* Brand constants. These never change with the theme. */
+  --brand-coral: #f17455;
+  --brand-ink: #0f0f0f;
+  --brand-bone: #f4f2ee;
+  --brand-ash: #8a8781;
+
+  /* Type — Inter for interface, Instrument Serif for display, JetBrains Mono
+     for anything that is data, code or a terminal. */
+  --font-ui: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-display: 'Instrument Serif', Georgia, 'Times New Roman', serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+
+  --fs-micro: 10px;
+  --fs-label: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-md: 15px;
+  --fs-lg: 19px;
+  --fs-xl: 26px;
+  --fs-display: 40px;
+
+  /* Rhythm */
+  --r-sm: 5px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+
+  --titlebar-h: 44px;
+  --rail-w: 236px;
+  --dock-w: 460px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 24px -8px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 24px 64px -16px rgba(0, 0, 0, 0.72);
+
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --dur: 150ms;
+}
+
+/* Light themes need softer shadows or everything looks bruised. */
+:root[data-mode='light'] {
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 8px 24px -8px rgba(15, 23, 42, 0.18);
+  --shadow-lg: 0 24px 64px -16px rgba(15, 23, 42, 0.24);
+}
+
+.hue-aqua {
+  --hue: var(--hue-aqua);
+}
+.hue-azure {
+  --hue: var(--hue-azure);
+}
+.hue-violet {
+  --hue: var(--hue-violet);
+}
+.hue-amber {
+  --hue: var(--hue-amber);
+}
+.hue-rose {
+  --hue: var(--hue-rose);
+}
+.hue-lime {
+  --hue: var(--hue-lime);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 1ms;
+  }
+}
+
+[data-reduce-motion='true'] {
+  --dur: 1ms;
+}

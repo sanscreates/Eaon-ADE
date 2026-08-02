@@ -1,0 +1,57 @@
+/*
+ * Brand typefaces, bundled rather than fetched. The app runs offline behind a
+ * strict CSP, so nothing here may reach the network.
+ *
+ * Inter and Instrument Serif are the Google Fonts latin subsets. JetBrains Mono
+ * is the full official release, not the Google subset — the subset drops the
+ * box-drawing block, and a terminal without U+2500–257F tears every CLI border
+ * apart. All three are SIL Open Font License 1.1; see LEGAL.md.
+ */
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: block;
+  src: url('../assets/fonts/Inter-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Instrument Serif';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('../assets/fonts/InstrumentSerif-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url('../assets/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: italic;
+  font-weight: 400;
+  font-display: block;
+  src: url('../assets/fonts/JetBrainsMono-Italic.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: block;
+  src: url('../assets/fonts/JetBrainsMono-Medium.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: block;
+  src: url('../assets/fonts/JetBrainsMono-Bold.woff2') format('woff2');
+}
