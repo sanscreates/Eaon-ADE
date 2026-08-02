@@ -81,10 +81,18 @@ ahead, treat the test instance as read-mostly: capture screenshots, read state,
 drive the surface you are testing — but do **not** close workspaces or panes,
 because that edit lands in the user's `state.json`.
 
-There is a durable fix, not yet applied: give the unpackaged build its own
-identity (`app.setName(app.isPackaged ? 'Eaon ADE' : 'Eaon ADE (dev)')`, so
-userData diverges) and add `app.requestSingleInstanceLock()`. Worth doing next
-time `src/main/index.ts` is free of in-flight edits.
+**The profile half of this is now fixed.** The unpackaged build names itself
+`Eaon ADE (dev)` and so keeps its own userData, verified by running a dev
+instance while the installed app was open: the app's `state.json` never saw the
+dev instance's workspace. A dev build can no longer overwrite the user's
+workspaces.
+
+That does **not** make launching free. Killing by name still takes the user's
+app down, and two instances still compete for the same ports and, if they ever
+run the same profile, the same files. Ask first.
+
+Still unapplied: `app.requestSingleInstanceLock()`, which would stop a second
+copy of the *packaged* app from starting at all.
 
 ## Other sessions may be editing the same files
 
