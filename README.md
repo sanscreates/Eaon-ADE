@@ -141,8 +141,7 @@ belongs to Eaon ADE.
 ```bash
 npm version patch          # or minor / major
 npm run dist:mac:release   # build, sign, notarise, staple, verify
-gh release create "v$(node -p "require('./package.json').version")" \
-  "dist/Eaon ADE-"*.dmg "dist/Eaon ADE-"*-mac.zip dist/latest-mac.yml
+npm run release:github     # upload to GitHub and verify the result
 ```
 
 `latest-mac.yml` is the update manifest and **must** be uploaded alongside the
@@ -154,9 +153,12 @@ Two details the release script handles that are easy to get wrong by hand:
   `latest-mac.yml` before notarisation, and stapling changes the bytes. Left
   alone, every update fails its checksum. `scripts/notarize-mac.mjs` rewrites the
   manifest from the final artifacts.
-- **Asset names are hyphenated.** The files on disk contain a space; GitHub
-  release assets cannot, so the manifest refers to `Eaon-ADE-…`. Upload the files
-  as they are named and GitHub normalises them to match.
+- **Asset names must be hyphenated before upload.** The files on disk contain a
+  space, and GitHub rewrites spaces in asset names to *dots* — `Eaon ADE-1.0.0…`
+  arrives as `Eaon.ADE-1.0.0…`. The manifest refers to the hyphenated form, so a
+  hand-uploaded release resolves its manifest and then 404s on the download.
+  `npm run release:github` renames the copies first, then re-fetches the
+  published asset and compares its checksum against the manifest.
 
 Block maps are deleted on purpose — they describe the pre-staple bytes, so
 differential downloads would rebuild a file that fails its own checksum. Updates

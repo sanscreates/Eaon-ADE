@@ -17,7 +17,8 @@
     "icon": "node scripts/make-icon.mjs 1024 resources/icon.png",
     "dist:mac:release": "npm run dist:mac && node scripts/notarize-mac.mjs",
     "verify:mac": "node scripts/verify-mac.mjs",
-    "notarize:mac": "node scripts/notarize-mac.mjs"
+    "notarize:mac": "node scripts/notarize-mac.mjs",
+    "release:github": "node scripts/publish-release.mjs"
   },
   "dependencies": {
     "@codemirror/lang-css": "^6.3.1",
