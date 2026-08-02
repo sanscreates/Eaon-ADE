@@ -29,8 +29,16 @@ const brain = new BrainStore()
 
 // Set before the app is ready so the user-data folder is ours alone and never
 // collides with another project that happens to share the package name.
-app.setName('Eaon ADE')
-app.setPath('userData', path.join(app.getPath('appData'), 'Eaon ADE'))
+//
+// The unpackaged build takes a different name, and so a different folder. Both
+// builds otherwise land on the same state.json — which holds your workspaces,
+// panes and settings — and the last one to write it wins. That is how a
+// development instance run alongside the installed app silently ate the user's
+// open workspaces. Neither --user-data-dir nor a redirected HOME prevents it:
+// this path is set explicitly, and macOS resolves appData through the OS.
+const APP_NAME = app.isPackaged ? 'Eaon ADE' : 'Eaon ADE (dev)'
+app.setName(APP_NAME)
+app.setPath('userData', path.join(app.getPath('appData'), APP_NAME))
 
 // Each terminal draws on its own GPU context. The browser default caps live
 // contexts at 16 and silently drops the oldest past that, which would blank a
