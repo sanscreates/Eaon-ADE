@@ -67,17 +67,32 @@ function unquote(s: string): string {
   return s.replace(/^["']|["']$/g, '').trim()
 }
 
+/**
+ * Tags as YAML.
+ *
+ * The inline form reads back by splitting on commas, so a tag containing one
+ * would come back as two. Those go on their own lines instead, where nothing
+ * needs escaping. Everything else keeps the compact form, because that is what
+ * almost every note has and it diffs better.
+ */
+function serializeTags(tags: string[]): string {
+  if (!tags.length) return 'tags: []'
+  if (tags.some((t) => /[,[\]"']/.test(t))) {
+    return `tags:\n${tags.map((t) => `  - ${t}`).join('\n')}`
+  }
+  return `tags: [${tags.join(', ')}]`
+}
+
 function serialize(meta: {
   title: string
   tags: string[]
   created: string
   updated: string
 }, body: string): string {
-  const tags = meta.tags.length ? `[${meta.tags.join(', ')}]` : '[]'
   return (
     `---\n` +
     `title: ${meta.title}\n` +
-    `tags: ${tags}\n` +
+    `${serializeTags(meta.tags)}\n` +
     `created: ${meta.created}\n` +
     `updated: ${meta.updated}\n` +
     `---\n\n` +
@@ -128,11 +143,16 @@ export class BrainStore {
     // Titles and slugs both resolve, so [[Auth flow]] and [[auth-flow]] work.
     const bySlug = new Map(raw.map((m) => [m.slug, m]))
     const byTitle = new Map(raw.map((m) => [m.title.toLowerCase(), m]))
-    const resolve = (target: string): string | null =>
-      bySlug.get(target)?.slug ??
-      byTitle.get(target.toLowerCase())?.slug ??
-      bySlug.get(slugify(target))?.slug ??
-      null
+    const resolve = (target: string): string | null => {
+      const derived = slugify(target)
+      return (
+        bySlug.get(target)?.slug ??
+        byTitle.get(target.toLowerCase())?.slug ??
+        // Skipped for the degenerate slug — see get().
+        (derived === 'untitled' ? undefined : bySlug.get(derived)?.slug) ??
+        null
+      )
+    }
 
     const backlinks = new Map<string, Set<string>>()
     for (const m of raw) {
@@ -190,12 +210,34 @@ export class BrainStore {
 
   get(slugOrTitle: string): Memory | null {
     const all = this.all()
+    // The slugified fallback lets [[Auth Flow]] find auth-flow.md. It is skipped
+    // for the degenerate slug, since every title with no latin characters
+    // reduces to "untitled" and matching on that would conflate unrelated notes.
+    const derived = slugify(slugOrTitle)
     return (
       all.find((m) => m.slug === slugOrTitle) ??
       all.find((m) => m.title.toLowerCase() === slugOrTitle.toLowerCase()) ??
-      all.find((m) => m.slug === slugify(slugOrTitle)) ??
+      (derived === 'untitled' ? null : all.find((m) => m.slug === derived)) ??
       null
     )
+  }
+
+  /**
+   * The note a write should replace, or null to create a new one.
+   *
+   * Deliberately stricter than get(): only the same slug or the same title
+   * counts. get() also falls back to comparing slugified titles, which is right
+   * when resolving a [[link]] and catastrophic here — two different titles that
+   * slugify alike ("Auth flow?" and "Auth flow!", or any two non-latin titles,
+   * which both reduce to "untitled") would make the second write silently
+   * overwrite the first and report success. uniqueSlug gives them separate
+   * files instead.
+   */
+  private target(input: { title: string; slug?: string }): Memory | null {
+    const all = this.all()
+    if (input.slug) return all.find((m) => m.slug === input.slug) ?? null
+    const title = input.title.trim().toLowerCase()
+    return all.find((m) => m.title.toLowerCase() === title) ?? null
   }
 
   /** Create or update. Matching an existing title updates it in place. */
@@ -203,24 +245,37 @@ export class BrainStore {
     const root = this.ensure()
     if (!root) return null
 
-    const existing = input.slug ? this.get(input.slug) : this.get(input.title)
+    const existing = this.target(input)
     const slug = existing?.slug ?? this.uniqueSlug(slugify(input.title))
     const now = new Date().toISOString()
 
     const file = path.join(root, `${slug}.md`)
-    fs.writeFileSync(
-      file,
-      serialize(
-        {
-          title: input.title.trim() || slug,
-          tags: (input.tags ?? existing?.tags ?? []).map((t) => t.trim()).filter(Boolean),
-          created: existing?.created ?? now,
-          updated: now
-        },
-        input.content
-      ),
-      'utf8'
+    const text = serialize(
+      {
+        title: input.title.trim() || slug,
+        tags: (input.tags ?? existing?.tags ?? []).map((t) => t.trim()).filter(Boolean),
+        created: existing?.created ?? now,
+        updated: now
+      },
+      input.content
     )
+
+    // Written beside the target and renamed over it, because rename is atomic.
+    // Agents and the app write these files concurrently by design, and a plain
+    // write truncates first — a reader arriving in that window would see half a
+    // note and, worse, could save the truncated version back.
+    const temp = path.join(root, `.${slug}.md.tmp`)
+    try {
+      fs.writeFileSync(temp, text, 'utf8')
+      fs.renameSync(temp, file)
+    } catch {
+      try {
+        fs.rmSync(temp, { force: true })
+      } catch {
+        // Nothing useful to do; the note simply was not saved.
+      }
+      return null
+    }
     return this.get(slug)
   }
 
