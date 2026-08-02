@@ -11,7 +11,9 @@ export default defineConfig({
           index: resolve('src/main/index.ts'),
           // Forked as a utilityProcess, so it has to be its own entry rather
           // than get folded into the main bundle.
-          'stt-child': resolve('src/main/stt/child.ts')
+          'stt-child': resolve('src/main/stt/child.ts'),
+          // Launched by MCP clients as their own stdio process.
+          'brain-mcp': resolve('src/main/brain/mcp-server.ts')
         }
       }
     }

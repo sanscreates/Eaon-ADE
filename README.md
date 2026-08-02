@@ -52,6 +52,21 @@ every open terminal at once — no restart, no reconnect. Themes are plain data 
 `src/shared/themes.ts`: a background, a tint, a foreground, three status colours
 and the sixteen ANSI colours. Adding your own is about twenty lines.
 
+**Eaon Brain** — what the project knows, kept as plain markdown in
+`.eaonbrain/` beside the code. Notes reference each other with `[[wiki links]]`,
+so the folder is a graph rather than a pile of files, and the app draws it.
+
+The point is the MCP server. Opening a workspace registers `eaon-brain` in that
+project's `.mcp.json`, so every agent you start there — Claude Code, Codex,
+anything speaking MCP — gets six tools for reading and writing the same memory:
+`brain_search`, `brain_list`, `brain_read`, `brain_write`, `brain_link`,
+`brain_related`. A fresh session searches the brain instead of re-reading the
+source tree to rebuild context it had yesterday. What one agent learns, the next
+one starts with. Commit it like code.
+
+Claude Code asks you to approve a project-scoped MCP server the first time it
+sees one; that is a one-off per workspace.
+
 **Conductor** (`⌘J`) — type once, send to the pane you are in, to every pane, or
 to one you name.
 
@@ -133,8 +148,22 @@ its forms and its route when you switch tabs away and back.
 | `⌘⇧D` | Dictate, starting and stopping by hand |
 | `Esc` | Discard what you are dictating |
 
-Inside a pane, `⌘C` / `⌘V` / `⌘A` belong to the terminal. Every other `⌘` combo
-belongs to Eaon ADE.
+Inside a pane:
+
+| | |
+|---|---|
+| `⇧Return` | New line without sending — sends `ESC CR`, which is what CLI agents read as "newline, do not submit" |
+| `⌥Return` | The same thing, via Option-as-Meta |
+| `⌘←` / `⌘→` | Start / end of line |
+| `⌘⌫` | Delete to the start of the line |
+| `⌘C` / `⌘V` / `⌘A` | Copy, paste, select all |
+
+Every other `⌘` combo belongs to Eaon ADE, not the shell.
+
+`⇧Return` is the binding Claude Code's `/terminal-setup` installs by hand in
+iTerm2 and VS Code. Eaon ADE sends it natively, so there is nothing to set up —
+but note that it means `⇧Return` no longer submits at a bare shell prompt, where
+`Return` still does.
 
 ## Cutting a release
 

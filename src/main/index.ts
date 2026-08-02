@@ -12,6 +12,8 @@ import * as browser from './browser'
 import * as models from './stt/models'
 import { SttHost } from './stt/host'
 import { Updater } from './updater'
+import { BrainStore } from './brain/store'
+import { isRegistered, registerWorkspace } from './brain/register'
 import { getTheme } from '../shared/themes'
 import { STT_MODELS } from '../shared/stt'
 import { AGENTS, type PersistedState, type SpawnRequest } from '../shared/types'
@@ -23,6 +25,7 @@ let store: Store
 const ptys = new PtyManager()
 const stt = new SttHost()
 const updater = new Updater()
+const brain = new BrainStore()
 
 // Set before the app is ready so the user-data folder is ours alone and never
 // collides with another project that happens to share the package name.
@@ -248,6 +251,25 @@ function registerIpc(): void {
     }
   )
   ipcMain.on('stt:stop', () => stt.stop())
+
+  // ---- project memory --------------------------------------------------
+  ipcMain.handle('brain:open', (_e, cwd: string | null) => {
+    brain.setWorkspace(cwd)
+    // Registering here means any agent started in this workspace from now on
+    // finds the memory tools already wired up.
+    const registration = cwd ? registerWorkspace(cwd) : null
+    return { stats: brain.stats(), registered: cwd ? isRegistered(cwd) : false, registration }
+  })
+  ipcMain.handle('brain:list', () => brain.list())
+  ipcMain.handle('brain:get', (_e, slug: string) => brain.get(slug))
+  ipcMain.handle('brain:write', (_e, input: { title: string; content: string; tags?: string[]; slug?: string }) =>
+    brain.write(input)
+  )
+  ipcMain.handle('brain:remove', (_e, slug: string) => brain.remove(slug))
+  ipcMain.handle('brain:search', (_e, q: string) => brain.search(q))
+  ipcMain.handle('brain:related', (_e, slug: string) => brain.related(slug))
+  ipcMain.handle('brain:graph', () => brain.graph())
+  ipcMain.handle('brain:stats', () => brain.stats())
 
   // ---- auto update -----------------------------------------------------
   ipcMain.handle('update:state', () => updater.current())

@@ -71,6 +71,12 @@ export function CommandPalette(): React.JSX.Element | null {
         run: () => store.setSurface('board')
       },
       {
+        id: 'brain',
+        label: 'Go to Brain — what this project knows',
+        icon: NotebookPen,
+        run: () => store.setSurface('brain')
+      },
+      {
         id: 'vault',
         label: 'Go to Vault',
         icon: NotebookPen,

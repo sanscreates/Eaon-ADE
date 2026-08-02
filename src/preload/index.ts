@@ -6,6 +6,7 @@ import type {
   SttModelDef
 } from '../shared/stt'
 import type { UpdateState } from '../shared/update'
+import type { BrainGraph, BrainStats, Memory, MemoryMeta, SearchHit } from '../shared/brain'
 import type {
   AgentDef,
   DirEntry,
@@ -158,6 +159,22 @@ const api = {
       ipcRenderer.on('update:state', handler)
       return () => ipcRenderer.removeListener('update:state', handler)
     }
+  },
+
+  /** Project memory: plain markdown in .eaonbrain/, shared with agents over MCP. */
+  brain: {
+    open: (cwd: string | null): Promise<{ stats: BrainStats; registered: boolean }> =>
+      ipcRenderer.invoke('brain:open', cwd),
+    list: (): Promise<MemoryMeta[]> => ipcRenderer.invoke('brain:list'),
+    get: (slug: string): Promise<Memory | null> => ipcRenderer.invoke('brain:get', slug),
+    write: (input: { title: string; content: string; tags?: string[]; slug?: string }): Promise<Memory | null> =>
+      ipcRenderer.invoke('brain:write', input),
+    remove: (slug: string): Promise<boolean> => ipcRenderer.invoke('brain:remove', slug),
+    search: (q: string): Promise<SearchHit[]> => ipcRenderer.invoke('brain:search', q),
+    related: (slug: string): Promise<{ backlinks: MemoryMeta[]; suggested: { meta: MemoryMeta; terms: string[] }[] }> =>
+      ipcRenderer.invoke('brain:related', slug),
+    graph: (): Promise<BrainGraph> => ipcRenderer.invoke('brain:graph'),
+    stats: (): Promise<BrainStats> => ipcRenderer.invoke('brain:stats')
   },
 
   sys: {

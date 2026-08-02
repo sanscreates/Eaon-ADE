@@ -9,6 +9,7 @@ import './styles/grid.css'
 import './styles/overlays.css'
 import './styles/voice.css'
 import './styles/update.css'
+import './styles/brain.css'
 import './styles/browser.css'
 import { App } from './App'
 

@@ -14,6 +14,7 @@ import { SettingsModal } from './components/SettingsModal'
 import { PresetEditor } from './components/PresetEditor'
 import { Board } from './components/Board'
 import { Vault } from './components/Vault'
+import { Brain } from './components/Brain'
 import { DictationHUD } from './components/DictationHUD'
 import { UpdateCard } from './components/UpdateCard'
 import { dictation } from './lib/dictation'
@@ -298,6 +299,7 @@ export function App(): React.JSX.Element {
     if (wizard) return <SetupWizard />
     if (surface === 'board') return <Board />
     if (surface === 'vault') return <Vault />
+    if (surface === 'brain') return <Brain />
     if (workspace) return <TerminalGrid workspace={workspace} />
     return <Launcher />
   }

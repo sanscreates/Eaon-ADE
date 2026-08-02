@@ -7,7 +7,7 @@ import { DEFAULT_THEME_ID } from './themes'
 
 export type PaneStatus = 'live' | 'idle' | 'attention' | 'exited'
 
-export type SurfaceId = 'grid' | 'swarm' | 'board' | 'vault'
+export type SurfaceId = 'grid' | 'swarm' | 'board' | 'vault' | 'brain'
 
 export interface AgentDef {
   id: string

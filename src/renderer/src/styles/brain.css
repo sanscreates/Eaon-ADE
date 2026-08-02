@@ -1,0 +1,241 @@
+/* Eaon Brain — list, editor and graph over the .eaonbrain/ folder. */
+
+.brain {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: var(--ink-000);
+}
+
+.brain-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid var(--line-100);
+}
+
+.brain-identity {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+.brain-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--text-hi);
+}
+.brain-stats {
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.brain-search {
+  flex: 1;
+  max-width: 320px;
+  height: 30px;
+}
+
+/* Quiet until it is actually wired to agents, then it earns the accent. */
+.brain-mcp {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line-200);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.brain-mcp[data-on='true'] {
+  color: var(--accent);
+  border-color: var(--accent-edge);
+  background: var(--accent-wash);
+}
+
+.brain-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 244px minmax(0, 1fr) 236px;
+}
+
+.brain-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px;
+  border-right: 1px solid var(--line-100);
+  background: var(--ink-050);
+}
+
+.brain-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 9px;
+  margin-bottom: 1px;
+  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  color: var(--text-mid);
+  text-align: left;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.brain-item svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--text-dim);
+}
+.brain-item:hover {
+  background: var(--ink-100);
+  color: var(--text-hi);
+}
+.brain-item[data-on='true'] {
+  background: var(--ink-200);
+  border-color: var(--line-200);
+  color: var(--text-hi);
+}
+.brain-item[data-on='true'] svg {
+  color: var(--accent);
+}
+.brain-item-text {
+  display: block;
+  min-width: 0;
+  flex: 1;
+}
+.brain-item-title {
+  display: block;
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.brain-item-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 9px;
+  color: var(--text-dim);
+}
+
+.brain-main {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+.brain-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.brain-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 20px 24px 0;
+}
+.brain-editor-title {
+  width: 100%;
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--text-hi);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-100);
+}
+.brain-editor-body {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  margin-top: 14px;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.75;
+  color: var(--text-mid);
+  resize: none;
+}
+.brain-editor-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 12px 0;
+  border-top: 1px solid var(--line-100);
+}
+.brain-editor-foot .btn {
+  height: 30px;
+}
+.brain-path {
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+
+.brain-inspector {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 14px;
+  border-left: 1px solid var(--line-100);
+  background: var(--ink-050);
+}
+
+.brain-ref {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 6px 8px;
+  margin-top: 2px;
+  border-radius: var(--r-sm);
+  color: var(--text-mid);
+  font-size: var(--fs-sm);
+  text-align: left;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.brain-ref svg {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
+button.brain-ref:hover {
+  background: var(--ink-200);
+  color: var(--text-hi);
+}
+/* A link written before the note it points at exists. */
+.brain-ref[data-missing='true'] {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.brain-suggested {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.brain-terms {
+  font-size: 9px;
+  color: var(--text-dim);
+}
+
+.brain-hint {
+  margin: 6px 2px;
+  font-size: var(--fs-micro);
+  line-height: 1.6;
+  color: var(--text-dim);
+}

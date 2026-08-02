@@ -8,7 +8,8 @@ import type { SurfaceId } from '@shared/types'
 const SURFACES: { id: SurfaceId; label: string }[] = [
   { id: 'grid', label: 'Grid' },
   { id: 'board', label: 'Board' },
-  { id: 'vault', label: 'Vault' }
+  { id: 'vault', label: 'Vault' },
+  { id: 'brain', label: 'Brain' }
 ]
 
 export function TitleBar(): React.JSX.Element {

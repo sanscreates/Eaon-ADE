@@ -7,3 +7,7 @@ dist/
 .eslintcache
 dev-app-update.yml
 *.tsbuildinfo
+
+# Machine-specific: absolute paths to this install. Regenerated per machine.
+# The memories themselves (.eaonbrain/) are committed on purpose.
+.mcp.json
