@@ -10,6 +10,7 @@ import './styles/overlays.css'
 import './styles/voice.css'
 import './styles/update.css'
 import './styles/brain.css'
+import './styles/stats.css'
 import './styles/browser.css'
 import { App } from './App'
 

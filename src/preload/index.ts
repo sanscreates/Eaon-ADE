@@ -7,6 +7,7 @@ import type {
 } from '../shared/stt'
 import type { UpdateState } from '../shared/update'
 import type { BrainGraph, BrainStats, Memory, MemoryMeta, SearchHit } from '../shared/brain'
+import type { Stats } from '../shared/stats'
 import type {
   AgentDef,
   DirEntry,
@@ -122,6 +123,11 @@ const api = {
     cancel: (modelId: string): void => ipcRenderer.send('stt:cancel', modelId),
     remove: (modelId: string): Promise<InstalledModel[]> =>
       ipcRenderer.invoke('stt:remove', modelId),
+  /** Streak, contribution grid and code totals. Null folder counts everything. */
+  stats: {
+    get: (folder: string | null): Promise<Stats> => ipcRenderer.invoke('stats:get', folder)
+  },
+
 
     load: (modelId: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('stt:load', modelId),

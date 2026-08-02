@@ -8,6 +8,7 @@ import { Store } from './store'
 import * as fsapi from './fsapi'
 import * as git from './git'
 import { listResumable, sessionCountFor } from './sessions'
+import { collectStats } from './stats'
 import * as browser from './browser'
 import * as models from './stt/models'
 import { SttHost } from './stt/host'
@@ -301,6 +302,9 @@ function registerIpc(): void {
 
   // ---- window ----------------------------------------------------------
   ipcMain.on('win:minimize', () => mainWindow?.minimize())
+  // Stats: null counts every folder you have worked in.
+  ipcMain.handle('stats:get', (_e, folder: string | null) => collectStats(folder))
+
   ipcMain.on('win:toggleMaximize', () => {
     if (!mainWindow) return
     mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()
