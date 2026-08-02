@@ -181,6 +181,52 @@
 
 /* ---- resume dialog ---------------------------------------------------- */
 
+/* Folder / everywhere switch, sitting in the dialog head. */
+.resume-scope {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-100);
+  background: var(--ink-050);
+}
+
+.resume-scope-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: calc(var(--r-md) - 3px);
+  background: transparent;
+  color: var(--text-lo);
+  font-size: 11.5px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.resume-scope-btn:hover {
+  color: var(--text-hi);
+}
+
+.resume-scope-btn[data-on='true'] {
+  background: var(--ink-200);
+  color: var(--text-hi);
+}
+
+.resume-scope-n {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-lo);
+}
+
+.resume-scope-btn[data-on='true'] .resume-scope-n {
+  color: var(--accent);
+}
+
 .resume-item {
   display: flex;
   align-items: center;

@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Check, Copy, History, Play, Trash2, X } from 'lucide-react'
+import { Check, Copy, FolderOpen, Globe, History, Play, Trash2, X } from 'lucide-react'
 import type { ResumableSession } from '@shared/types'
-import { useStore } from '../store/useStore'
+import { useActiveWorkspace, useStore } from '../store/useStore'
 import { relTime, shortPath } from '../lib/util'
+import { inFolder } from '../lib/sessionScope'
 
 /**
  * Reads the transcripts Claude Code and Codex leave on disk and offers them
  * back. Nothing here is invented — each row is a real `--resume` command.
+ *
+ * Scoped to the folder you are in. Every session on the machine is read, but a
+ * dozen unrelated projects' worth of history is noise when you are trying to
+ * pick up yesterday's work in this one, so the rest is one click away rather
+ * than in your face.
  */
 export function ResumeDialog(): React.JSX.Element | null {
   const open = useStore((s) => s.resumeOpen)
@@ -17,20 +23,34 @@ export function ResumeDialog(): React.JSX.Element | null {
   const addPane = useStore((s) => s.addPane)
   const activeWorkspaceId = useStore((s) => s.activeWorkspaceId)
   const home = useStore((s) => s.home)
+  const workspace = useActiveWorkspace()
+  const folder = workspace?.cwd ?? null
 
   const [all, setAll] = useState<ResumableSession[] | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
+  const [everywhere, setEverywhere] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setAll(null)
+    // Always reopen scoped to the folder, whatever was picked last time.
+    setEverywhere(false)
     window.eaon.sessions.resumable().then(setAll)
   }, [open])
 
-  const sessions = useMemo(
+  const visible = useMemo(
     () => (all ?? []).filter((s) => !dismissed.includes(s.id)),
     [all, dismissed]
   )
+
+  // With no workspace open there is no folder to scope to, so the whole list is
+  // the only sensible answer.
+  const scoped = Boolean(folder) && !everywhere
+  const mine = useMemo(
+    () => (folder ? visible.filter((s) => inFolder(s.cwd, folder)) : []),
+    [visible, folder]
+  )
+  const sessions = scoped ? mine : visible
 
   if (!open) return null
 
@@ -64,9 +84,37 @@ export function ResumeDialog(): React.JSX.Element | null {
             <div className="modal-sub">
               {all === null
                 ? 'Reading your transcripts…'
-                : `${sessions.length} session${sessions.length === 1 ? '' : 's'} found on this machine`}
+                : scoped
+                  ? `${sessions.length} session${sessions.length === 1 ? '' : 's'} in ${shortPath(folder as string, home)}`
+                  : `${sessions.length} session${sessions.length === 1 ? '' : 's'} across every folder`}
             </div>
           </div>
+
+          {folder && all !== null && (
+            <div className="resume-scope" role="group" aria-label="Which sessions to show">
+              <button
+                className="resume-scope-btn"
+                data-on={scoped}
+                onClick={() => setEverywhere(false)}
+                title="Only sessions from the folder this workspace is open on"
+              >
+                <FolderOpen size={12} />
+                This folder
+                <span className="resume-scope-n">{mine.length}</span>
+              </button>
+              <button
+                className="resume-scope-btn"
+                data-on={!scoped}
+                onClick={() => setEverywhere(true)}
+                title="Every session on this machine"
+              >
+                <Globe size={12} />
+                Everywhere
+                <span className="resume-scope-n">{visible.length}</span>
+              </button>
+            </div>
+          )}
+
           <button className="icon-btn" onClick={() => setOpen(false)} aria-label="Close">
             <X size={15} />
           </button>
@@ -75,10 +123,30 @@ export function ResumeDialog(): React.JSX.Element | null {
         <div className="modal-body">
           {all !== null && sessions.length === 0 && (
             <div className="empty">
-              <strong>No transcripts to resume.</strong>
-              <span>
-                Sessions show up here after you have run Claude Code or Codex in a terminal.
-              </span>
+              {scoped && visible.length > 0 ? (
+                <>
+                  <strong>Nothing to resume in this folder.</strong>
+                  <span>
+                    There {visible.length === 1 ? 'is' : 'are'} {visible.length} session
+                    {visible.length === 1 ? '' : 's'} in other folders.
+                  </span>
+                  <button
+                    className="btn btn-ghost"
+                    style={{ marginTop: 10 }}
+                    onClick={() => setEverywhere(true)}
+                  >
+                    <Globe size={13} />
+                    Show them
+                  </button>
+                </>
+              ) : (
+                <>
+                  <strong>No transcripts to resume.</strong>
+                  <span>
+                    Sessions show up here after you have run Claude Code or Codex in a terminal.
+                  </span>
+                </>
+              )}
             </div>
           )}
 
@@ -89,8 +157,11 @@ export function ResumeDialog(): React.JSX.Element | null {
                   <span className="resume-tool">{s.tool}</span>
                   <span className="resume-when">{relTime(s.updatedAt)}</span>
                 </div>
-                <div className="resume-label" title={s.label}>
-                  {s.cwd ? shortPath(s.cwd, home) : s.label}
+                {/* Every row shares the folder when scoped, so the opening
+                    prompt is the useful thing to show; across folders it is the
+                    folder that tells them apart. */}
+                <div className="resume-label" title={scoped ? s.label : s.cwd || s.label}>
+                  {scoped ? s.label : s.cwd ? shortPath(s.cwd, home) : s.label}
                 </div>
                 <div className="resume-cmd">
                   <code>{s.command}</code>
