@@ -511,12 +511,10 @@ export const useStore = create<AppState>((set, get) => ({
     const s = get()
     const pane = s.workspaces.flatMap((w) => w.panes).find((p) => p.id === paneId)
     if (!pane) return
-    terminals.dispose(paneId)
     get().patchPane(paneId, { status: 'idle', contextPct: null, title: null })
-    // The pane component re-creates and re-spawns on the next render tick.
-    window.setTimeout(() => {
-      terminals.spawn(paneId, pane.cwd, pane.command, get().settings)
-    }, 60)
+    // The registry does the swap: the pane component mounted once and will not
+    // mount again, so it cannot re-attach the replacement terminal itself.
+    terminals.restart(paneId, pane.cwd, pane.command, get().settings)
   },
 
   savePreset(preset) {

@@ -30,6 +30,81 @@ const CONTEXT_PATTERNS: { re: RegExp; reportsRemaining: boolean }[] = [
   { re: /\d+(?:\.\d+)?k\s*\((\d{1,3})%\)/i, reportsRemaining: false }
 ]
 
+/**
+ * What the Command key does to a line of text everywhere else on a Mac.
+ *
+ * These are the readline control codes, not the arrow-key escapes: a shell,
+ * a REPL and an agent's own prompt all bind ^A/^E/^U, while `ESC[H` style
+ * sequences are only understood by some of them.
+ */
+const MAC_LINE_EDITING: Record<string, string> = {
+  ArrowLeft: '\x01', // beginning of line
+  ArrowRight: '\x05', // end of line
+  Backspace: '\x15' // kill to the start of the line
+}
+
+/** What should happen to a key pressed inside a pane. */
+export type KeyVerdict =
+  | { do: 'terminal' }
+  | { do: 'app' }
+  | { do: 'send'; data: string }
+  | { do: 'selectAll' }
+
+/** Only the fields the decision depends on, so it can be exercised directly. */
+export type KeyLike = Pick<
+  KeyboardEvent,
+  'type' | 'key' | 'shiftKey' | 'metaKey' | 'ctrlKey' | 'altKey'
+>
+
+/**
+ * Decide who owns a keypress: the shell, the app, or this layer.
+ *
+ * Kept apart from xterm so the mapping can be checked on its own — the whole
+ * bug class here is "two different keys send the same bytes", which is
+ * invisible from the outside and obvious from a table.
+ */
+export function resolveKey(e: KeyLike): KeyVerdict {
+  if (e.type !== 'keydown') return { do: 'terminal' }
+
+  /*
+   * Shift+Enter opens a line instead of submitting one.
+   *
+   * A terminal has no way to say this on its own: Enter and Shift+Enter both
+   * arrive as a bare CR, so the agent on the other end cannot tell them apart
+   * and treats every one as "send". ESC CR is the sequence CLI agents read as
+   * "newline, do not send" — the same thing iTerm2 and VS Code users bind by
+   * hand to make Shift+Enter work.
+   *
+   * Alt+Enter already produces this via macOptionIsMeta, so both work.
+   */
+  if (e.key === 'Enter' && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    return { do: 'send', data: '\x1b\r' }
+  }
+
+  // Command-key combos belong to the app, not the shell, apart from the handful
+  // a terminal is expected to own itself.
+  if (e.metaKey) {
+    const key = e.key.toLowerCase()
+
+    // Select-all has to be done by the terminal. Left to the browser it selects
+    // the contents of xterm's hidden input, which is empty, so the binding the
+    // app advertises would quietly do nothing.
+    if (key === 'a') return { do: 'selectAll' }
+
+    // The line-editing keys every other macOS text field has. Sent as readline
+    // control codes rather than arrow escapes, because those are what shells
+    // and the agents' own prompts actually bind.
+    const editing = MAC_LINE_EDITING[e.key]
+    if (editing) return { do: 'send', data: editing }
+
+    // Copy and paste stay with the browser, which already routes them through
+    // xterm's own clipboard handling. Everything else is an app shortcut.
+    return key === 'c' || key === 'v' ? { do: 'terminal' } : { do: 'app' }
+  }
+
+  return { do: 'terminal' }
+}
+
 export interface TerminalEvents {
   onTitle: (paneId: string, title: string) => void
   onStatus: (paneId: string, status: PaneStatus) => void
@@ -182,15 +257,24 @@ class TerminalRegistry {
     ]
     for (const listener of listeners) rt.disposers.push(() => listener.dispose())
 
-    // Command-key combos belong to the app, not the shell — except the three
-    // clipboard bindings people expect a terminal to own.
     term.attachCustomKeyEventHandler((e) => {
-      if (e.type !== 'keydown') return true
-      if (e.metaKey) {
-        const k = e.key.toLowerCase()
-        return k === 'c' || k === 'v' || k === 'a'
+      const verdict = resolveKey(e)
+      switch (verdict.do) {
+        case 'send':
+          e.preventDefault()
+          // Through input() rather than straight to the PTY, so these behave
+          // like any other keystroke — including scrolling back to the prompt.
+          term.input(verdict.data)
+          return false
+        case 'selectAll':
+          e.preventDefault()
+          term.selectAll()
+          return false
+        case 'app':
+          return false
+        default:
+          return true
       }
-      return true
     })
 
     this.panes.set(paneId, rt)
@@ -316,6 +400,34 @@ class TerminalRegistry {
       rt.term.writeln(`\r\n  Could not start a shell here.\r\n  ${res.error ?? ''}\r\n`)
       this.events?.onStatus(paneId, 'exited')
     }
+  }
+
+  /**
+   * Tear a pane's shell down and bring a fresh one up in the same place.
+   *
+   * Disposing a terminal takes its DOM with it, and a pane only attaches its
+   * terminal when the component mounts — which does not happen again, because
+   * the pane id has not changed. Re-spawning on its own therefore leaves a live
+   * shell with nothing on screen. Holding on to the host element across the
+   * swap is what keeps the restarted session visible.
+   */
+  restart(paneId: string, cwd: string, command: string | null, settings: Settings): void {
+    const host = this.panes.get(paneId)?.host ?? null
+    this.dispose(paneId)
+    this.ensure(paneId, settings)
+    if (host) this.attach(paneId, host, settings)
+
+    // Two frames, so the fresh terminal has measured itself before the shell
+    // starts and the PTY is created at the size it will actually be drawn at.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        this.fit(paneId)
+        void this.spawn(paneId, cwd, command, settings)
+        // Restarting is always something you asked for, so the caret belongs
+        // in the pane you asked about.
+        this.focus(paneId)
+      })
+    )
   }
 
   /** Feeds PTY output into the terminal and updates the derived signals. */

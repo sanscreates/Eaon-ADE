@@ -43,7 +43,10 @@ const SHORTCUTS: { keys: string; what: string }[] = [
   { keys: `${MOD}⇧D`, what: 'Dictate, start and stop by hand' },
   { keys: 'Esc', what: 'Discard what you are dictating' },
   { keys: `${MOD},`, what: 'Settings' },
-  { keys: `${MOD}C / ${MOD}V`, what: 'Copy and paste inside a terminal' }
+  { keys: `${MOD}C / ${MOD}V`, what: 'Copy and paste inside a terminal' },
+  { keys: '⇧Return', what: 'New line in a pane, without sending' },
+  { keys: `${MOD}← / ${MOD}→`, what: 'Start and end of the line in a pane' },
+  { keys: `${MOD}⌫`, what: 'Delete to the start of the line in a pane' }
 ]
 
 function Toggle({
