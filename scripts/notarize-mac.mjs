@@ -52,12 +52,25 @@ if (!existsSync(DIST)) {
 }
 
 const entries = readdirSync(DIST)
-const dmg = entries.find((f) => f.endsWith('.dmg'))
+
+/*
+ * Only this version's artifacts.
+ *
+ * dist/ keeps whatever earlier releases left behind, and picking the first
+ * match meant taking them in name order — so building 1.0.1 on top of a 1.0.0
+ * dist/ uploaded the *old* dmg to Apple and then tried to staple the new app
+ * with a ticket that had never been issued for it. The stapler catches that,
+ * but only after a full notarisation round trip against the wrong build.
+ */
+const VERSION = JSON.parse(readFileSync('package.json', 'utf8')).version
+const thisVersion = (f) => f.includes(`-${VERSION}-`) || f.includes(`-${VERSION}.`)
+
+const dmg = entries.find((f) => f.endsWith('.dmg') && thisVersion(f))
 const appDir = entries.find((f) => statSync(join(DIST, f)).isDirectory() && f.startsWith('mac'))
 const app = appDir && readdirSync(join(DIST, appDir)).find((f) => f.endsWith('.app'))
 
 if (!dmg || !app) {
-  console.error('Expected a .dmg and a .app in dist/. Run `npm run dist:mac` first.')
+  console.error(`Expected a .dmg for ${VERSION} and a .app in dist/. Run \`npm run dist:mac\` first.`)
   process.exit(1)
 }
 
@@ -101,7 +114,7 @@ for (const target of [appPath, dmgPath]) {
 }
 
 // The zip cannot carry a ticket, so rebuild it from the stapled app.
-const zip = entries.find((f) => f.endsWith('-mac.zip'))
+const zip = entries.find((f) => f.endsWith('-mac.zip') && thisVersion(f))
 if (zip) {
   console.log(`\nRepacking ${zip} from the stapled app…`)
   execSync(`cd '${join(DIST, appDir)}' && ditto -c -k --keepParent '${app}' '../${zip}'`, {
@@ -119,7 +132,7 @@ if (zip) {
 const manifest = join(DIST, 'latest-mac.yml')
 if (existsSync(manifest)) {
   console.log('Rewriting latest-mac.yml against the stapled artifacts…')
-  const version = JSON.parse(readFileSync('package.json', 'utf8')).version
+  const version = VERSION
   const hash = (file) =>
     createHash('sha512').update(readFileSync(file)).digest('base64')
 

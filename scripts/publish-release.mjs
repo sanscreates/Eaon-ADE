@@ -57,7 +57,17 @@ const staging = join(tmpdir(), `eaon-release-${version}`)
 rmSync(staging, { recursive: true, force: true })
 mkdirSync(staging, { recursive: true })
 
-const artifacts = readdirSync(DIST).filter((f) => f.endsWith('.dmg') || f.endsWith('-mac.zip'))
+// This version only. dist/ holds every build ever made here, and uploading a
+// previous release's dmg alongside this one would attach files to the tag that
+// the manifest never mentions — and that nobody could tell apart by name.
+const thisVersion = (f) => f.includes(`-${version}-`) || f.includes(`-${version}.`)
+const artifacts = readdirSync(DIST).filter(
+  (f) => (f.endsWith('.dmg') || f.endsWith('-mac.zip')) && thisVersion(f)
+)
+if (!artifacts.length) {
+  console.error(`No artifacts for ${version} in dist/. Run \`npm run dist:mac:release\` first.`)
+  process.exit(1)
+}
 const uploads = [manifest]
 for (const name of artifacts) {
   const target = join(staging, name.replace(/ /g, '-'))
