@@ -9,8 +9,8 @@
  * Two colours carry meaning in every theme and must never be confused with each
  * other: `live` (an agent is working) and `attention` (it is waiting on you).
  *
- * Community palettes below are reproduced from MIT-licensed projects; see
- * LEGAL.md for the attribution list.
+ * Community palettes below are reproduced from their MIT-licensed projects, each
+ * named in Settings › Appearance.
  */
 
 export type ThemeMode = 'dark' | 'light'

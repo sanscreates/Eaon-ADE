@@ -484,8 +484,8 @@ export function SettingsModal(): React.JSX.Element | null {
 
                 <p className="setting-desc" style={{ marginTop: 20, lineHeight: 1.7 }}>
                   Dracula, Gruvbox, Nord, Tokyo Night, Catppuccin, One Dark and Rosé Pine palettes
-                  are reproduced from their MIT-licensed projects. See LEGAL.md for the full
-                  attribution list.
+                  are reproduced from their MIT-licensed projects, with thanks to their
+                  authors.
                 </p>
               </>
             )}

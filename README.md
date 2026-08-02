@@ -303,6 +303,3 @@ is offline by construction — the transcriber loads models `local_files_only`
 with remote loading switched off, so it cannot reach the network. Audio is held
 in memory, transcribed locally, and dropped; it is never written to disk. The
 microphone is open only while you are dictating.
-
-See [LEGAL.md](LEGAL.md) for exactly what it reads and writes on disk, the model
-licensing, and the trademark notes.
