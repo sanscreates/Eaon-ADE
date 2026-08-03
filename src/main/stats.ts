@@ -1,8 +1,7 @@
 import fs from 'node:fs/promises'
-import os from 'node:os'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
-import { projectSlug } from './sessions'
+import { projectDirsFor, projectsRoot } from './sessions'
 import { EMPTY_STATS, WEEKS, languageName, type LanguageStat, type Stats, type StatsDay } from '../shared/stats'
 
 /**
@@ -46,18 +45,12 @@ function windowDays(): string[] {
 
 /** Project directories whose sessions belong to this folder, or all of them. */
 async function projectDirs(root: string, folder: string | null): Promise<string[]> {
-  let all: string[]
+  if (folder) return projectDirsFor(folder)
   try {
-    all = await fs.readdir(root)
+    return await fs.readdir(root)
   } catch {
     return []
   }
-  if (!folder) return all
-  // A descendant folder slugifies to the parent's slug plus a separator, so the
-  // prefix test finds nested checkouts too. Over-matching is possible because
-  // slugs are lossy, and is preferable to missing a folder's own history.
-  const slug = projectSlug(folder)
-  return all.filter((d) => d === slug || d.startsWith(`${slug}-`))
 }
 
 interface SessionPoint {
@@ -66,7 +59,7 @@ interface SessionPoint {
 }
 
 async function collectSessions(folder: string | null): Promise<SessionPoint[]> {
-  const root = path.join(os.homedir(), '.claude', 'projects')
+  const root = projectsRoot()
   const dirs = await projectDirs(root, folder)
   const out: SessionPoint[] = []
 

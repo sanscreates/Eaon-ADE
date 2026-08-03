@@ -1,0 +1,53 @@
+name: Windows build
+
+# Windows artifacts built on Windows. A macOS machine can cross-build them —
+# see `npm run dist:win` — but it cannot compile a native module for another
+# platform, so it depends on whatever prebuilt binaries the dependency happens
+# to ship. Here node-pty is compiled against this Electron version, and sharp
+# installs its own Windows binary, which is the arrangement that will still be
+# right after the next dependency bump.
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Attach the artifacts to the release for this tag
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck and bundle
+        run: npm run build
+
+      # Never publishes on its own. A tag push builds and keeps the artifacts;
+      # attaching them to a release is a decision someone makes on purpose.
+      - name: Package
+        run: npx electron-builder --win --publish ${{ (github.event_name == 'workflow_dispatch' && inputs.publish) && 'always' || 'never' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Keep the artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: eaon-ade-windows
+          if-no-files-found: error
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/latest.yml

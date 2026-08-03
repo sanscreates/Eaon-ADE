@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { ResumableSession } from '../shared/types'
+import { isInside } from '../shared/paths'
 
 /** Reads the first `bytes` of a file without pulling the whole thing into memory. */
 async function readHead(file: string, bytes = 8192): Promise<string> {
@@ -57,6 +58,52 @@ const MAX_SCAN = 400
 export function projectSlug(cwd: string): string {
   // Character for character, with no collapsing of runs: /a/-b becomes -a--b.
   return cwd.replace(/[^a-zA-Z0-9]/g, '-')
+}
+
+/** Where Claude Code keeps one directory of transcripts per project. */
+export function projectsRoot(): string {
+  return path.join(os.homedir(), '.claude', 'projects')
+}
+
+/**
+ * The project directories holding a folder's transcripts.
+ *
+ * The directory name is derived from the path, so normally one string
+ * comparison finds it. That derivation belongs to Claude Code rather than to
+ * us, though, and a Windows path is a different shape — a drive letter, a
+ * colon, backslashes. Rather than assume the derivation matches there, fall
+ * back to asking the transcripts where they actually ran. That is
+ * authoritative on every platform and costs one short read per project, not
+ * per session.
+ */
+export async function projectDirsFor(cwd: string): Promise<string[]> {
+  const root = projectsRoot()
+  let dirs: string[]
+  try {
+    dirs = await fs.readdir(root)
+  } catch {
+    return []
+  }
+
+  const slug = projectSlug(cwd)
+  const byName = dirs.filter((d) => d === slug || d.startsWith(`${slug}-`))
+  if (byName.length) return byName
+
+  const found: string[] = []
+  for (const dir of dirs) {
+    let entries: string[]
+    try {
+      entries = await fs.readdir(path.join(root, dir))
+    } catch {
+      continue
+    }
+    const sample = entries.find((e) => e.endsWith('.jsonl'))
+    if (!sample) continue
+    const file = path.join(root, dir, sample)
+    const recorded = await readCwd(file, await readHead(file))
+    if (recorded && isInside(recorded, cwd)) found.push(dir)
+  }
+  return found
 }
 
 /**
@@ -201,11 +248,15 @@ export async function listResumable(limit = MAX_SCAN): Promise<ResumableSession[
 
 /** How many transcripts exist for a folder — shown next to recent folders. */
 export async function sessionCountFor(cwd: string): Promise<number> {
-  const dir = path.join(os.homedir(), '.claude', 'projects', projectSlug(cwd))
-  try {
-    const entries = await fs.readdir(dir)
-    return entries.filter((e) => e.endsWith('.jsonl')).length
-  } catch {
-    return 0
+  const root = projectsRoot()
+  let total = 0
+  for (const dir of await projectDirsFor(cwd)) {
+    try {
+      const entries = await fs.readdir(path.join(root, dir))
+      total += entries.filter((e) => e.endsWith('.jsonl')).length
+    } catch {
+      /* the directory went away between listing and reading */
+    }
   }
+  return total
 }

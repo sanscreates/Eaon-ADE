@@ -63,10 +63,41 @@ dmg:
   sign: true
 
 win:
+  icon: resources/icon.png
   target:
-    - dir
+    - target: nsis
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  # Carry only this platform's native binaries, as the mac build does. Every
+  # dependency here ships all three platforms' and they are pure weight.
   files:
     - '!**/node_modules/onnxruntime-node/bin/napi-v6/{darwin,linux}/**'
+    - '!**/node_modules/node-pty/prebuilds/{darwin-x64,darwin-arm64}/**'
+    # The compiled output in build/ belongs to whichever machine did the build.
+    # node-pty looks there before prebuilds/, and on Windows that is a macOS
+    # binary it will fail to load before falling through to the right one —
+    # harmless, but there is no reason to ship it.
+    - '!**/node_modules/node-pty/build/**'
+    - '!**/node_modules/@img/sharp-{darwin,linux}*/**'
+    - '!**/node_modules/@img/sharp-libvips-{darwin,linux}*/**'
+nsis:
+  # An installer you can read rather than one that runs the moment it opens:
+  # this app writes a shell profile's worth of state and people should get to
+  # say where it goes.
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  # Per-user, so installing needs no administrator and neither does updating.
+  # electron-updater replaces the app in place, and a per-machine install would
+  # put an elevation prompt in front of every silent update.
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Eaon ADE
+  artifactName: ${productName}-${version}-${arch}-setup.${ext}
+  # Workspaces, panes and settings survive an uninstall. Removing the app is
+  # not the same as saying the work in it was disposable.
+  deleteAppDataOnUninstall: false
 linux:
   category: Development
   target:
