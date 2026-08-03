@@ -35,6 +35,17 @@ export interface ModelUse {
 export interface UsageWindow {
   id: WindowId
   label: string
+  /**
+   * How the window moves, which decides whether a countdown means anything.
+   *
+   * The five-hour limit is a block: it opens on the first message after a long
+   * enough pause and closes five hours later, so "resets in" is a real time.
+   * The weekly one here is a rolling seven days computed from the transcripts,
+   * where nothing resets at once — it only eases as the oldest activity ages
+   * out, and a countdown to that would read as "your week resets in a minute"
+   * while the bar sat at sixty per cent.
+   */
+  kind: 'block' | 'rolling'
   /** Two or three characters, for the pill. */
   short: string
   spanMs: number
@@ -61,9 +72,15 @@ export interface UsageReport {
   error?: string
 }
 
-export const WINDOWS: { id: WindowId; label: string; short: string; spanMs: number }[] = [
-  { id: 'session', label: 'Session', short: '5h', spanMs: 5 * 60 * 60 * 1000 },
-  { id: 'week', label: 'Week', short: 'wk', spanMs: 7 * 24 * 60 * 60 * 1000 }
+export const WINDOWS: {
+  id: WindowId
+  label: string
+  short: string
+  spanMs: number
+  kind: 'block' | 'rolling'
+}[] = [
+  { id: 'session', label: 'Session', short: '5h', spanMs: 5 * 60 * 60 * 1000, kind: 'block' },
+  { id: 'week', label: 'Week', short: 'wk', spanMs: 7 * 24 * 60 * 60 * 1000, kind: 'rolling' }
 ]
 
 /**

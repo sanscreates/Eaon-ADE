@@ -144,7 +144,14 @@ export function UsagePill(): React.JSX.Element | null {
                 <div className="usage-window-head">
                   <span className="usage-window-name">{w.label}</span>
                   <span className="usage-window-reset">
-                    {live ? `eases in ${formatUntil(w.resetsAt)}` : 'reading…'}
+                    {!live
+                      ? 'reading…'
+                      : w.kind === 'block'
+                        ? w.resetsAt
+                          ? `resets in ${formatUntil(w.resetsAt)}`
+                          : 'no block open'
+                        : /* Nothing resets at once, so it does not claim to. */
+                          'rolling 7 days'}
                   </span>
                   <span className="usage-window-pct">{Math.round(w.pct)}%</span>
                 </div>
