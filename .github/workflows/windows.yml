@@ -119,9 +119,23 @@ jobs:
           $version = (Get-Content package.json | ConvertFrom-Json).version
           $tag = "v$version"
           Write-Host "attaching to $tag"
+          # The product name has a space in it and GitHub turns a space in an
+          # asset name into a dot — "Eaon.ADE-1.0.3-x64-setup.exe" — while
+          # latest.yml, which electron-builder wrote, spells it with a hyphen.
+          # Every download link and every Windows auto-update would 404 on that
+          # mismatch. So each file is staged under the name the manifest asks
+          # for before it goes anywhere near the release.
+          $staging = Join-Path $env:RUNNER_TEMP 'release-assets'
+          Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $staging | Out-Null
+
           $files = Get-ChildItem dist -File |
                    Where-Object { $_.Name -match '(setup\.exe|-win\.zip|^latest\.yml$)' } |
-                   ForEach-Object { $_.FullName }
+                   ForEach-Object {
+                     $target = Join-Path $staging ($_.Name -replace ' ', '-')
+                     Copy-Item $_.FullName $target
+                     $target
+                   }
           if (-not $files) { throw 'nothing to attach' }
           $files | ForEach-Object { Write-Host "  $(Split-Path $_ -Leaf)" }
           gh release upload $tag @files --clobber --repo $env:GITHUB_REPOSITORY
