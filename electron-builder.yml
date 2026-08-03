@@ -78,11 +78,16 @@ win:
   files:
     - '!**/node_modules/onnxruntime-node/bin/napi-v6/{darwin,linux}/**'
     - '!**/node_modules/node-pty/prebuilds/{darwin-x64,darwin-arm64}/**'
-    # The compiled output in build/ belongs to whichever machine did the build.
-    # node-pty looks there before prebuilds/, and on Windows that is a macOS
-    # binary it will fail to load before falling through to the right one —
-    # harmless, but there is no reason to ship it.
-    - '!**/node_modules/node-pty/build/**'
+    # build/ holds what this machine compiled, and for ia32 it holds the only
+    # copy: node-pty publishes prebuilds for x64 and arm64 only, so a 32-bit
+    # package that drops build/ has no conpty.node to load and no terminal at
+    # all. Cross-building from macOS puts a Mach-O binary here instead, which
+    # node-pty tries first and fails on before falling through to prebuilds —
+    # noisy, but it still works, and shipping nothing is worse.
+    #
+    # The intermediate object files are another matter; nothing loads those.
+    - '!**/node_modules/node-pty/build/**/obj*/**'
+    - '!**/node_modules/node-pty/build/**/*.pdb'
     - '!**/node_modules/@img/sharp-{darwin,linux}*/**'
     - '!**/node_modules/@img/sharp-libvips-{darwin,linux}*/**'
 nsis:
