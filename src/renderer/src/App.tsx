@@ -19,6 +19,7 @@ import { DictationHUD } from './components/DictationHUD'
 import { UpdateCard } from './components/UpdateCard'
 import { dictation } from './lib/dictation'
 import { cancelDictation, startDictation, stopDictation, toggleDictation } from './lib/voice'
+import { commandFor, effectiveHoldKey } from './lib/keys'
 
 export function App(): React.JSX.Element {
   const ready = useStore((s) => s.ready)
@@ -149,8 +150,8 @@ export function App(): React.JSX.Element {
       }
 
       // The chord toggles, for dictating something longer than you want to hold
-      // a key for.
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
+      // a key for. Which chord that is depends on the platform — see lib/keys.
+      if (commandFor(e) === 'dictate') {
         e.preventDefault()
         // Immediate: the app's other shortcut handler is bound to window too,
         // and plain stopPropagation does not stop a sibling on the same target.
@@ -159,7 +160,9 @@ export function App(): React.JSX.Element {
         return
       }
 
-      const holdKey = s.settings.voiceHoldKey
+      // Right ⌘ on macOS; on Windows that key belongs to the Start menu, so the
+      // stored default resolves to Right Control instead.
+      const holdKey = effectiveHoldKey(s.settings.voiceHoldKey)
       if (holdKey && e.code === holdKey) {
         // Auto-repeat fires continuously while a key is held; only the first
         // press starts anything.
@@ -182,7 +185,7 @@ export function App(): React.JSX.Element {
     }
 
     const onKeyUp = (e: KeyboardEvent): void => {
-      const holdKey = useStore.getState().settings.voiceHoldKey
+      const holdKey = effectiveHoldKey(useStore.getState().settings.voiceHoldKey)
       if (holdKey && e.code === holdKey) release()
     }
 
@@ -212,11 +215,14 @@ export function App(): React.JSX.Element {
   // ---- global shortcuts --------------------------------------------------
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // Which modifier means "the app" differs by platform, and the rule lives
+      // in one place so this handler and the one inside each pane cannot
+      // disagree about who owns a key. See lib/keys.ts.
+      const command = commandFor(e)
+      if (!command) return
+
       const s = useStore.getState()
-      const mod = e.metaKey || e.ctrlKey
-      if (!mod) return
       const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId) ?? null
-      const key = e.key.toLowerCase()
 
       const take = (fn: () => void): void => {
         e.preventDefault()
@@ -224,42 +230,53 @@ export function App(): React.JSX.Element {
         fn()
       }
 
-      // Terminal font size, the way every terminal binds it.
-      if (key === '=' || key === '+') {
-        return take(() => s.updateSettings({ fontSize: Math.min(22, s.settings.fontSize + 1) }))
-      }
-      if (key === '-' || key === '_') {
-        return take(() => s.updateSettings({ fontSize: Math.max(8, s.settings.fontSize - 1) }))
-      }
-      if (key === '0') return take(() => s.updateSettings({ fontSize: 12 }))
-
-      if (key === 'k') return take(() => s.setPalette(!s.paletteOpen))
-      if (key === 't') return take(() => s.openWizard('grid'))
-      if (key === 'b' && !e.shiftKey) return take(() => s.toggleRail())
-      if (key === 'j') return take(() => s.toggleConductor())
-      if (key === ',') return take(() => s.setSettingsOpen(!s.settingsOpen))
-      if (key === '/') return take(() => s.setResumeOpen(true))
-
-      if (ws) {
-        // Shift-D is dictation, handled above; plain D adds a pane.
-        if (key === 'd' && !e.shiftKey) return take(() => s.addPane(ws.id))
-        if (key === 'e' && ws.activePaneId) {
-          return take(() => s.zoomPane(ws.id, ws.zoomedPaneId ? null : ws.activePaneId))
-        }
-        if (key === 'w' && ws.activePaneId) {
-          return take(() => s.closePane(ws.id, ws.activePaneId as string))
-        }
-        if (key === 'f' && ws.activePaneId) {
-          // Leave find to the pane itself; it owns its own search box.
+      switch (command) {
+        case 'fontIn':
+          return take(() => s.updateSettings({ fontSize: Math.min(22, s.settings.fontSize + 1) }))
+        case 'fontOut':
+          return take(() => s.updateSettings({ fontSize: Math.max(8, s.settings.fontSize - 1) }))
+        case 'fontReset':
+          return take(() => s.updateSettings({ fontSize: 12 }))
+        case 'palette':
+          return take(() => s.setPalette(!s.paletteOpen))
+        case 'newWorkspace':
+          return take(() => s.openWizard('grid'))
+        case 'rail':
+          return take(() => s.toggleRail())
+        case 'dock':
+          return take(() => s.toggleDock())
+        case 'conductor':
+          return take(() => s.toggleConductor())
+        case 'settings':
+          return take(() => s.setSettingsOpen(!s.settingsOpen))
+        case 'resume':
+          return take(() => s.setResumeOpen(true))
+        case 'dictate':
+          // Handled by the dictation listener, which runs first and stops this
+          // one; reaching here means it declined, so do nothing.
           return
-        }
-        const num = Number(e.key)
-        if (!Number.isNaN(num) && num >= 1 && num <= 9 && ws.panes[num - 1]) {
-          return take(() => s.focusPane(ws.id, ws.panes[num - 1].id))
-        }
+        case 'selectAll':
+          // Belongs to whichever pane has focus. It reaches the terminal's own
+          // handler, which is the only thing that can select its buffer.
+          return
+        default:
+          break
       }
 
-      if (e.shiftKey && key === 'b') return take(() => s.toggleDock())
+      if (!ws) return
+
+      if (command === 'addPane') return take(() => s.addPane(ws.id))
+      if (command === 'zoomPane' && ws.activePaneId) {
+        return take(() => s.zoomPane(ws.id, ws.zoomedPaneId ? null : ws.activePaneId))
+      }
+      if (command === 'closePane' && ws.activePaneId) {
+        return take(() => s.closePane(ws.id, ws.activePaneId as string))
+      }
+      const pane = /^pane([1-9])$/.exec(command)
+      if (pane) {
+        const index = Number(pane[1]) - 1
+        if (ws.panes[index]) return take(() => s.focusPane(ws.id, ws.panes[index].id))
+      }
     }
 
     window.addEventListener('keydown', onKey, true)

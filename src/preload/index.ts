@@ -108,6 +108,11 @@ const api = {
     devPorts: (): Promise<number[]> => ipcRenderer.invoke('browser:devPorts')
   },
 
+  /** Streak, contribution grid and code totals. Null folder counts everything. */
+  stats: {
+    get: (folder: string | null): Promise<Stats> => ipcRenderer.invoke('stats:get', folder)
+  },
+
   /**
    * Voice dictation. Models are downloaded and run by the main process; the
    * renderer only ever hands over audio samples and gets text back.
@@ -123,11 +128,6 @@ const api = {
     cancel: (modelId: string): void => ipcRenderer.send('stt:cancel', modelId),
     remove: (modelId: string): Promise<InstalledModel[]> =>
       ipcRenderer.invoke('stt:remove', modelId),
-  /** Streak, contribution grid and code totals. Null folder counts everything. */
-  stats: {
-    get: (folder: string | null): Promise<Stats> => ipcRenderer.invoke('stats:get', folder)
-  },
-
 
     load: (modelId: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('stt:load', modelId),

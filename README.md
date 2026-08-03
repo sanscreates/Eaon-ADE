@@ -29,8 +29,9 @@ npm run typecheck # types only
 npm run dist:mac  # unpacked .app in dist/
 ```
 
-Requirements: Node 20+, and Xcode Command Line Tools on macOS (node-pty compiles
-against them). If the Electron binary fails to download during install, run
+Requirements: Node 20+. On macOS, Xcode Command Line Tools (node-pty compiles
+against them); on Windows, nothing beyond Node — node-pty ships a prebuilt
+binary. If the Electron binary fails to download during install, run
 `node node_modules/electron/install.js`.
 
 ## What is in it
@@ -164,6 +165,56 @@ Every other `⌘` combo belongs to Eaon ADE, not the shell.
 iTerm2 and VS Code. Eaon ADE sends it natively, so there is nothing to set up —
 but note that it means `⇧Return` no longer submits at a bare shell prompt, where
 `Return` still does.
+
+## Windows
+
+Eaon ADE runs on Windows 10 and 11, x64 and arm64. Panes are real
+pseudo-terminals there too — ConPTY rather than a Unix pty — and open in
+PowerShell 7 if it is installed, otherwise Windows PowerShell. `COMSPEC` is
+used only if neither is present: cmd.exe is a poor host for a CLI agent, and
+picking it by default would be picking it by accident.
+
+**The shortcuts are not the same, and they cannot be.** macOS has two
+modifiers, so ⌘ can belong to the app and Control to the shell without either
+noticing the other. Windows has one, and every bare Control chord already means
+something to the program you are talking to — `Ctrl+D` ends input, `Ctrl+W`
+deletes a word, `Ctrl+K` kills a line. An app that took those would leave you
+with an agent you could not exit.
+
+So on Windows the app takes **Ctrl+Shift** and bare Control always reaches the
+shell. `Ctrl+Shift+K` for commands, `Ctrl+Shift+T` for a workspace,
+`Ctrl+Shift+D` for a pane, and so on for everything ⌘ does on a Mac. Two
+bindings that are ⌘⇧ on macOS need their own letters, since Shift is already
+spent: the side panel is `Ctrl+Shift+O` and hold-free dictation is
+`Ctrl+Shift+M`. Font size stays on plain `Ctrl+=` / `Ctrl+-` / `Ctrl+0`, where
+every Windows terminal puts it. Hold **Right Ctrl** to dictate.
+
+The clipboard follows Windows Terminal: `Ctrl+Shift+C` and `Ctrl+Shift+V`
+always work, and bare `Ctrl+C` copies when text is selected and interrupts when
+it is not. Settings lists the full keymap for whichever platform you are on.
+
+### Building it
+
+On Windows, `npm run dist:mac`'s counterpart is:
+
+```bash
+npm run dist:win        # NSIS installer and a zip, x64 and arm64
+```
+
+The same command cross-builds from macOS. Two of the three native dependencies
+ship every platform's binaries in one package, so they need no help; sharp does
+not, and `npm run deps:win` fetches its Windows binaries first — `dist:win`
+runs it for you. The cross-build skips the native rebuild step, because
+node-gyp cannot compile for another platform and node-pty's prebuilt binary is
+N-API, so it does not need recompiling.
+
+Prefer the real thing for anything you intend to ship: `.github/workflows/windows.yml`
+builds on a Windows runner, where node-pty is compiled against this exact
+Electron version rather than trusted to have shipped the right prebuild.
+
+Installers are **not code-signed**. Windows SmartScreen will warn on first run
+until they are signed with an Authenticode certificate, which is a separate
+purchase from the Apple Developer membership the macOS build uses.
 
 ## Cutting a release
 
