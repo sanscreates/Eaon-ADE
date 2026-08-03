@@ -19,17 +19,10 @@
  *   node scripts/fetch-win-deps.mjs
  */
 import { execFileSync } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-
-/*
- * npm is a shell script everywhere except Windows, where it is npm.cmd — and a
- * .cmd cannot be started by execFile, which is why running this on Windows came
- * back "spawnSync npm ENOENT". Naming the right binary is cheaper than turning
- * on a shell and then worrying about how it quotes an @scope/name.
- */
-const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
 const ROOT = process.cwd()
 const MODULES = join(ROOT, 'node_modules')
@@ -74,19 +67,27 @@ for (const pkg of wanted) {
 
   const stage = mkdtempSync(join(tmpdir(), 'eaon-win-dep-'))
   try {
-    // npm refuses to *install* a package for another platform, even when told
-    // which one. Downloading the tarball and unpacking it is the same bytes
-    // without the check, and is what the published package would have been.
-    const tarball = execFileSync(NPM, ['pack', `${pkg}@${sharpVersion}`, '--silent'], {
-      cwd: stage,
-      encoding: 'utf8'
-    })
-      .trim()
-      .split('\n')
-      .pop()
+    /*
+     * Straight from the registry rather than through npm.
+     *
+     * `npm pack` would be the obvious way, and it is how this started, but npm
+     * on Windows is npm.cmd and Node will not spawn a .cmd without a shell —
+     * first ENOENT, then EINVAL once it was named correctly. Asking the
+     * registry for the tarball needs no subprocess at all, and tar is a real
+     * executable on both platforms.
+     */
+    const meta = await fetch(`https://registry.npmjs.org/${pkg.replace('/', '%2f')}/${sharpVersion}`)
+    if (!meta.ok) throw new Error(`registry said ${meta.status}`)
+    const { dist } = await meta.json()
+    if (!dist?.tarball) throw new Error('no tarball in the registry entry')
+
+    const res = await fetch(dist.tarball)
+    if (!res.ok) throw new Error(`downloading the tarball said ${res.status}`)
+    const tarball = join(stage, 'package.tgz')
+    writeFileSync(tarball, Buffer.from(await res.arrayBuffer()))
 
     mkdirSync(target, { recursive: true })
-    execFileSync('tar', ['-xzf', join(stage, tarball), '--strip-components=1', '-C', target])
+    execFileSync('tar', ['-xzf', tarball, '--strip-components=1', '-C', target])
     console.log(`fetched  ${pkg}@${sharpVersion}`)
     fetched += 1
   } catch (err) {
