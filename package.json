@@ -1,7 +1,7 @@
 {
   "name": "eaon-ade",
-  "version": "1.0.1",
-  "description": "Eaon ADE \u2014 an agentic development environment. Run many CLI coding agents side by side.",
+  "version": "1.0.2",
+  "description": "Eaon ADE — an agentic development environment. Run many CLI coding agents side by side.",
   "main": "./out/main/index.js",
   "author": "Eaon",
   "license": "MIT",
