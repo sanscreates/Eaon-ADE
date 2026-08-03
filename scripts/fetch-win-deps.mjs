@@ -45,7 +45,11 @@ if (!sharpVersion) {
   process.exit(1)
 }
 
-const wanted = [`@img/sharp-win32-x64`, `@img/sharp-win32-arm64`]
+// One per architecture we build. npm installs only the one matching the
+// machine doing the install, so on an x64 runner the arm64 and ia32 packages
+// are absent and their installers would ship without sharp — which does not
+// fail at package time, only later, the first time somebody dictates.
+const wanted = ['@img/sharp-win32-x64', '@img/sharp-win32-arm64', '@img/sharp-win32-ia32']
 let fetched = 0
 
 for (const pkg of wanted) {

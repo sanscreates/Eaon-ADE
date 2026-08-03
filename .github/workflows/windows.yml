@@ -45,6 +45,12 @@ jobs:
       - name: Typecheck and bundle
         run: npm run build
 
+      # npm installs only the sharp binary matching this runner, so the arm64
+      # and ia32 packages would ship without one. Nothing fails at package time;
+      # it fails the first time somebody on those machines dictates.
+      - name: Fetch the other architectures' native binaries
+        run: npm run deps:win
+
       # Never publishes on its own. A tag push builds and keeps the artifacts;
       # attaching them to a release is a decision someone makes on purpose.
       - name: Package
@@ -56,35 +62,50 @@ jobs:
         shell: pwsh
         run: Get-ChildItem dist -File | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}} | Format-Table -AutoSize
 
-      # /S is NSIS's silent switch. The install is per-user, so it needs no
-      # elevation — the same path a person double-clicking would take.
-      - name: Install it
-        shell: pwsh
-        run: |
-          $setup = Get-ChildItem dist -Filter '*x64-setup.exe' | Select-Object -First 1
-          if (-not $setup) { throw 'no x64 installer was produced' }
-          Write-Host "installing $($setup.Name)"
-          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -PassThru -Wait
-          Write-Host "installer exit code: $($p.ExitCode)"
-          if ($p.ExitCode -ne 0) { throw "the installer failed with $($p.ExitCode)" }
-
-      - name: Find what it installed
-        id: installed
-        shell: pwsh
-        run: |
-          $roots = @("$env:LOCALAPPDATA\Programs", "$env:ProgramFiles", "${env:ProgramFiles(x86)}") |
-                   Where-Object { $_ -and (Test-Path $_) }
-          $exe = Get-ChildItem -Path $roots -Recurse -Filter 'Eaon ADE.exe' -ErrorAction SilentlyContinue |
-                 Select-Object -First 1
-          if (-not $exe) { throw 'the installer reported success but nothing was installed' }
-          Write-Host "installed at $($exe.FullName)"
-          "exe=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-      - name: Does it run
+      # Each installer is installed, driven and removed in turn. /S is NSIS's
+      # silent switch, and the install is per-user, so this needs no elevation —
+      # the same path a person double-clicking would take. A 32-bit build runs
+      # on a 64-bit runner through WOW64, which is how it would run on the
+      # 32-bit machines it is meant for.
+      - name: Install each installer and run it
         shell: pwsh
         env:
           SMOKE_PORT: '9222'
-        run: node scripts/smoke-windows.mjs "${{ steps.installed.outputs.exe }}"
+        run: |
+          $failures = @()
+          foreach ($arch in @('x64', 'ia32')) {
+            $setup = Get-ChildItem dist -Filter "*-$arch-setup.exe" | Select-Object -First 1
+            if (-not $setup) { $failures += "$arch : no installer was produced"; continue }
+
+            Write-Host "`n=== $arch : installing $($setup.Name) ==="
+            $p = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -PassThru -Wait
+            if ($p.ExitCode -ne 0) { $failures += "$arch : installer exit $($p.ExitCode)"; continue }
+
+            $roots = @("$env:LOCALAPPDATA\Programs", "$env:ProgramFiles", "${env:ProgramFiles(x86)}") |
+                     Where-Object { $_ -and (Test-Path $_) }
+            $exe = Get-ChildItem -Path $roots -Recurse -Filter 'Eaon ADE.exe' -ErrorAction SilentlyContinue |
+                   Select-Object -First 1
+            if (-not $exe) { $failures += "$arch : installed nothing"; continue }
+            Write-Host "$arch : installed at $($exe.FullName)"
+
+            node scripts/smoke-windows.mjs "$($exe.FullName)"
+            if ($LASTEXITCODE -ne 0) { $failures += "$arch : the app did not pass" }
+
+            # Out of the way before the next one, so each is tested on its own
+            # rather than on whatever the previous install left behind.
+            $uninstaller = Join-Path $exe.Directory.FullName 'Uninstall Eaon ADE.exe'
+            if (Test-Path $uninstaller) {
+              Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait
+              Start-Sleep -Seconds 10
+            }
+          }
+
+          if ($failures.Count) {
+            Write-Host "`n--- failed ---"
+            $failures | ForEach-Object { Write-Host "  $_" }
+            exit 1
+          }
+          Write-Host "`nboth installers install, launch and pass."
 
       - name: Keep the artifacts
         if: always()

@@ -65,8 +65,12 @@ dmg:
 win:
   icon: resources/icon.png
   target:
+    # ia32 is here for the machines that still need it. Windows 11 has no
+    # 32-bit edition, so this is old Windows 10 x86 installs only — and on
+    # those the speech engine will not load, because ONNX Runtime publishes no
+    # 32-bit build. Everything else in the app works.
     - target: nsis
-      arch: [x64, arm64]
+      arch: [x64, ia32, arm64]
     - target: zip
       arch: [x64, arm64]
   # Carry only this platform's native binaries, as the mac build does. Every

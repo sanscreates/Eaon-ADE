@@ -193,6 +193,18 @@ The clipboard follows Windows Terminal: `Ctrl+Shift+C` and `Ctrl+Shift+V`
 always work, and bare `Ctrl+C` copies when text is selected and interrupts when
 it is not. Settings lists the full keymap for whichever platform you are on.
 
+### Which installer
+
+Releases carry an installer per architecture. `x64` is what almost everyone
+wants; `arm64` is for Windows on ARM; `ia32` is 32-bit, for old Windows 10 x86
+installs — Windows 11 has no 32-bit edition at all.
+
+One thing is missing from the 32-bit build and cannot be added: **voice
+dictation does not work there.** ONNX Runtime, which runs the speech model,
+publishes no 32-bit Windows binary. The speech engine lives in its own process,
+so nothing else is affected — terminals, panes, the Brain, Stats and the
+preview browser all work as they do everywhere else.
+
 ### Building it
 
 On Windows, `npm run dist:mac`'s counterpart is:
