@@ -84,6 +84,30 @@ jobs:
             if (-not $exe) { $failures += "$arch : installed nothing"; continue }
             Write-Host "$arch : installed at $($exe.FullName)"
 
+            # Every shortcut the installer made must point at something that
+            # is there. A shortcut left aimed at a missing exe is what produces
+            # "Windows is searching for Eaon ADE.exe" — the installer looks
+            # like it worked and the app cannot be started from the desktop.
+            $shell = New-Object -ComObject WScript.Shell
+            $shortcutDirs = @(
+              [Environment]::GetFolderPath('Desktop'),
+              [Environment]::GetFolderPath('CommonDesktopDirectory'),
+              (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'),
+              (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs')
+            ) | Where-Object { $_ -and (Test-Path $_) }
+
+            $links = @(Get-ChildItem -Path $shortcutDirs -Recurse -Filter '*.lnk' -ErrorAction SilentlyContinue |
+                       Where-Object { $_.BaseName -like '*Eaon*' })
+            if ($links.Count -eq 0) { $failures += "$arch : the installer made no shortcuts" }
+            foreach ($l in $links) {
+              $target = $shell.CreateShortcut($l.FullName).TargetPath
+              if ($target -and (Test-Path $target)) {
+                Write-Host "$arch : shortcut ok  $($l.Name) -> $target"
+              } else {
+                $failures += "$arch : broken shortcut $($l.FullName) -> '$target'"
+              }
+            }
+
             node scripts/smoke-windows.mjs "$($exe.FullName)"
             if ($LASTEXITCODE -ne 0) { $failures += "$arch : the app did not pass" }
 
@@ -92,7 +116,18 @@ jobs:
             $uninstaller = Join-Path $exe.Directory.FullName 'Uninstall Eaon ADE.exe'
             if (Test-Path $uninstaller) {
               Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait
-              Start-Sleep -Seconds 10
+              Start-Sleep -Seconds 15
+
+              # A shortcut that outlives the app it points at is the other way
+              # to get "Windows is searching for Eaon ADE.exe".
+              $left = @(Get-ChildItem -Path $shortcutDirs -Recurse -Filter '*.lnk' -ErrorAction SilentlyContinue |
+                        Where-Object { $_.BaseName -like '*Eaon*' })
+              foreach ($l in $left) {
+                $target = $shell.CreateShortcut($l.FullName).TargetPath
+                if (-not ($target -and (Test-Path $target))) {
+                  $failures += "$arch : uninstall left a dead shortcut at $($l.FullName)"
+                }
+              }
             }
           }
 
