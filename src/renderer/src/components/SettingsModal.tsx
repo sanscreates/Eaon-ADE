@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { ACCENT_OVERRIDES, THEMES } from '@shared/themes'
 import { useStore } from '../store/useStore'
-import { MOD } from '../lib/util'
+import { IS_MAC } from '../lib/util'
 import { ThemeCard } from './ThemeCard'
 import { VoicePanel } from './VoicePanel'
 import { UpdateSetting } from './UpdateSetting'
@@ -28,26 +28,56 @@ const SECTIONS: { id: SectionId; label: string; icon: typeof Palette }[] = [
   { id: 'about', label: 'About', icon: Info }
 ]
 
-const SHORTCUTS: { keys: string; what: string }[] = [
-  { keys: `${MOD}K`, what: 'Commands' },
-  { keys: `${MOD}T`, what: 'New workspace' },
-  { keys: `${MOD}D`, what: 'Add a pane' },
-  { keys: `${MOD}W`, what: 'Close the focused pane' },
-  { keys: `${MOD}E`, what: 'Fill the grid with the focused pane' },
-  { keys: `${MOD}1`, what: 'Jump to a pane (through ' + MOD + '9)' },
-  { keys: `${MOD}J`, what: 'Conductor' },
-  { keys: `${MOD}B`, what: 'Workspaces sidebar' },
-  { keys: `${MOD}⇧B`, what: 'Side panel' },
-  { keys: `${MOD}/`, what: 'Resume a session' },
+/*
+ * Two tables rather than one with substitutions, because the keymaps genuinely
+ * differ. On Windows the shell keeps every bare Control chord, so the app sits
+ * on Ctrl+Shift — and Ctrl+C has to be explained rather than silently changed.
+ */
+const MAC_SHORTCUTS: { keys: string; what: string }[] = [
+  { keys: '⌘K', what: 'Commands' },
+  { keys: '⌘T', what: 'New workspace' },
+  { keys: '⌘D', what: 'Add a pane' },
+  { keys: '⌘W', what: 'Close the focused pane' },
+  { keys: '⌘E', what: 'Fill the grid with the focused pane' },
+  { keys: '⌘1', what: 'Jump to a pane (through ⌘9)' },
+  { keys: '⌘J', what: 'Conductor' },
+  { keys: '⌘B', what: 'Workspaces sidebar' },
+  { keys: '⌘⇧B', what: 'Side panel' },
+  { keys: '⌘/', what: 'Resume a session' },
   { keys: 'Hold Right ⌘', what: 'Dictate while held' },
-  { keys: `${MOD}⇧D`, what: 'Dictate, start and stop by hand' },
+  { keys: '⌘⇧D', what: 'Dictate, start and stop by hand' },
   { keys: 'Esc', what: 'Discard what you are dictating' },
-  { keys: `${MOD},`, what: 'Settings' },
-  { keys: `${MOD}C / ${MOD}V`, what: 'Copy and paste inside a terminal' },
+  { keys: '⌘,', what: 'Settings' },
+  { keys: '⌘C / ⌘V', what: 'Copy and paste inside a terminal' },
   { keys: '⇧Return', what: 'New line in a pane, without sending' },
-  { keys: `${MOD}← / ${MOD}→`, what: 'Start and end of the line in a pane' },
-  { keys: `${MOD}⌫`, what: 'Delete to the start of the line in a pane' }
+  { keys: '⌘← / ⌘→', what: 'Start and end of the line in a pane' },
+  { keys: '⌘⌫', what: 'Delete to the start of the line in a pane' },
+  { keys: '⌘= / ⌘- / ⌘0', what: 'Terminal font size' }
 ]
+
+const PC_SHORTCUTS: { keys: string; what: string }[] = [
+  { keys: 'Ctrl+Shift+K', what: 'Commands' },
+  { keys: 'Ctrl+Shift+T', what: 'New workspace' },
+  { keys: 'Ctrl+Shift+D', what: 'Add a pane' },
+  { keys: 'Ctrl+Shift+W', what: 'Close the focused pane' },
+  { keys: 'Ctrl+Shift+E', what: 'Fill the grid with the focused pane' },
+  { keys: 'Ctrl+Shift+1', what: 'Jump to a pane (through Ctrl+Shift+9)' },
+  { keys: 'Ctrl+Shift+J', what: 'Conductor' },
+  { keys: 'Ctrl+Shift+B', what: 'Workspaces sidebar' },
+  { keys: 'Ctrl+Shift+O', what: 'Side panel' },
+  { keys: 'Ctrl+Shift+/', what: 'Resume a session' },
+  { keys: 'Hold Right Ctrl', what: 'Dictate while held' },
+  { keys: 'Ctrl+Shift+M', what: 'Dictate, start and stop by hand' },
+  { keys: 'Esc', what: 'Discard what you are dictating' },
+  { keys: 'Ctrl+Shift+,', what: 'Settings' },
+  { keys: 'Ctrl+Shift+C / Ctrl+Shift+V', what: 'Copy and paste inside a terminal' },
+  { keys: 'Ctrl+C', what: 'Interrupt — or copy, when text is selected' },
+  { keys: '⇧Return', what: 'New line in a pane, without sending' },
+  { keys: 'Ctrl+= / Ctrl+- / Ctrl+0', what: 'Terminal font size' },
+  { keys: 'Ctrl+A, Ctrl+E, Ctrl+W…', what: 'Left to the shell, as on any terminal' }
+]
+
+const SHORTCUTS = IS_MAC ? MAC_SHORTCUTS : PC_SHORTCUTS
 
 function Toggle({
   on,
