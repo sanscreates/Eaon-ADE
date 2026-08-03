@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { getTheme, type TerminalPalette } from '@shared/themes'
 import type { PaneStatus, Settings } from '@shared/types'
+import { IS_MAC, commandFor } from './keys'
 import { stripAnsi } from './util'
 
 /** Patterns that mean the agent has stopped and is waiting on a human. */
@@ -77,12 +78,20 @@ export type KeyVerdict =
   | { do: 'app' }
   | { do: 'send'; data: string }
   | { do: 'selectAll' }
+  | { do: 'copy' }
+  | { do: 'paste' }
 
 /** Only the fields the decision depends on, so it can be exercised directly. */
 export type KeyLike = Pick<
   KeyboardEvent,
   'type' | 'key' | 'shiftKey' | 'metaKey' | 'ctrlKey' | 'altKey'
->
+> & { code?: string }
+
+/** What the pane knows that the key alone does not. */
+export interface KeyContext {
+  /** Whether anything is selected, which is what makes Ctrl+C ambiguous. */
+  hasSelection?: boolean
+}
 
 /**
  * Decide who owns a keypress: the shell, the app, or this layer.
@@ -91,7 +100,7 @@ export type KeyLike = Pick<
  * bug class here is "two different keys send the same bytes", which is
  * invisible from the outside and obvious from a table.
  */
-export function resolveKey(e: KeyLike): KeyVerdict {
+export function resolveKey(e: KeyLike, ctx: KeyContext = {}): KeyVerdict {
   if (e.type !== 'keydown') return { do: 'terminal' }
 
   /*
@@ -109,7 +118,46 @@ export function resolveKey(e: KeyLike): KeyVerdict {
     return { do: 'send', data: '\x1b\r' }
   }
 
-  // Option + arrows and forward-delete move and cut by word.
+  if (!IS_MAC) {
+    /*
+     * Windows and Linux have one modifier, and the shell already owns every
+     * bare Control chord — ^C interrupts, ^D ends input, ^W deletes a word,
+     * ^K kills a line. None of them can become application shortcuts without
+     * leaving an agent you cannot exit. So the app takes Ctrl+Shift, and
+     * anything else Control does goes straight through.
+     */
+    const command = commandFor(e)
+    if (command === 'selectAll') return { do: 'selectAll' }
+    if (command) return { do: 'app' }
+
+    if (e.ctrlKey && !e.altKey && !e.metaKey) {
+      const key = e.key.toLowerCase()
+      // Ctrl+Shift+C and Ctrl+Shift+V, which is where every Windows terminal
+      // puts the clipboard precisely because Ctrl+C is spoken for.
+      if (e.shiftKey && key === 'c') return { do: 'copy' }
+      if (e.shiftKey && key === 'v') return { do: 'paste' }
+
+      /*
+       * Bare Ctrl+C is the one genuine ambiguity on this platform: copy, or
+       * interrupt? Windows Terminal resolves it by what is on screen — with a
+       * selection it copies, without one it interrupts — and that is what a
+       * Windows user's hands already expect.
+       */
+      if (!e.shiftKey && key === 'c' && ctx.hasSelection) return { do: 'copy' }
+      if (!e.shiftKey && key === 'v') return { do: 'paste' }
+    }
+
+    return { do: 'terminal' }
+  }
+
+  /*
+   * Everything below is macOS, where Option is Meta.
+   *
+   * Option + arrows and forward-delete move and cut by word. Sent as
+   * meta-letter sequences rather than the modified arrow escapes xterm emits,
+   * because readline binds those everywhere — and in bash `ESC[1;3D` is not
+   * merely ignored, the tail of it lands on the line as text.
+   */
   if (e.altKey && !e.metaKey && !e.ctrlKey) {
     const word = WORD_EDITING[e.key]
     if (word) return { do: 'send', data: word }
@@ -419,7 +467,7 @@ class TerminalRegistry {
     for (const listener of listeners) rt.disposers.push(() => listener.dispose())
 
     term.attachCustomKeyEventHandler((e) => {
-      const verdict = resolveKey(e)
+      const verdict = resolveKey(e, { hasSelection: term.hasSelection() })
       switch (verdict.do) {
         case 'send':
           e.preventDefault()
@@ -430,6 +478,25 @@ class TerminalRegistry {
         case 'selectAll':
           e.preventDefault()
           term.selectAll()
+          return false
+        case 'copy': {
+          const text = term.getSelection()
+          e.preventDefault()
+          // Nothing selected is not an error, it is a no-op — and on Windows
+          // this path is only reached with a selection anyway.
+          if (text) void navigator.clipboard.writeText(text)
+          return false
+        }
+        case 'paste':
+          e.preventDefault()
+          void navigator.clipboard
+            .readText()
+            .then((text) => {
+              if (text) term.paste(text)
+            })
+            .catch(() => {
+              /* clipboard refused; nothing useful to do about it */
+            })
           return false
         case 'app':
           return false

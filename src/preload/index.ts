@@ -124,11 +124,6 @@ const api = {
     countFor: (cwd: string): Promise<number> => ipcRenderer.invoke('sessions:countFor', cwd)
   },
 
-  /** Streak, contribution grid and code totals. Null folder counts everything. */
-  stats: {
-    get: (folder: string | null): Promise<Stats> => ipcRenderer.invoke('stats:get', folder)
-  },
-
   /** How much of the Claude plan has been spent. Read on disk unless told otherwise. */
   usage: {
     read: (opts: { fromAnthropic: boolean; session: number; week: number }): Promise<UsageReport> =>
@@ -151,6 +146,11 @@ const api = {
       ipcRenderer.on('browser:key', handler)
       return () => ipcRenderer.removeListener('browser:key', handler)
     }
+  },
+
+  /** Streak, contribution grid and code totals. Null folder counts everything. */
+  stats: {
+    get: (folder: string | null): Promise<Stats> => ipcRenderer.invoke('stats:get', folder)
   },
 
   /**

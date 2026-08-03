@@ -1,3 +1,4 @@
+import { IS_MAC } from './keys'
 /** Short, collision-safe id. Good enough for pane and workspace keys. */
 export function uid(prefix = ''): string {
   const rand = Math.random().toString(36).slice(2, 8)
@@ -86,8 +87,12 @@ export function fuzzy(needle: string, haystack: string): boolean {
 }
 
 export function isMac(): boolean {
-  return navigator.platform.toLowerCase().includes('mac')
+  return IS_MAC
 }
 
-/** "⌘" on macOS, "Ctrl" elsewhere. */
-export const MOD = isMac() ? '⌘' : 'Ctrl'
+/*
+ * Re-exported so there is one answer to "what does a shortcut look like here".
+ * The label has to match what the key handler actually binds, and on Windows
+ * that is Ctrl+Shift — bare Control belongs to the shell. See lib/keys.ts.
+ */
+export { IS_MAC, MOD, MOD_PLAIN } from './keys'

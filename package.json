@@ -1,6 +1,6 @@
 {
   "name": "eaon-ade",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Eaon ADE — an agentic development environment. Run many CLI coding agents side by side.",
   "main": "./out/main/index.js",
   "author": "Eaon",
@@ -14,6 +14,8 @@
     "rebuild": "electron-rebuild -f -w node-pty",
     "postinstall": "electron-builder install-app-deps",
     "dist:mac": "npm run build && electron-builder --mac",
+    "deps:win": "node scripts/fetch-win-deps.mjs",
+    "dist:win": "npm run build && npm run deps:win && electron-builder --win -c.npmRebuild=false",
     "icon": "node scripts/make-icon.mjs 1024 resources/icon.png",
     "dist:mac:release": "npm run dist:mac && node scripts/notarize-mac.mjs",
     "verify:mac": "node scripts/verify-mac.mjs",

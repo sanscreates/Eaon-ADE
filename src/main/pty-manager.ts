@@ -1,4 +1,6 @@
+import fs from 'node:fs'
 import os from 'node:os'
+import path from 'node:path'
 import { app } from 'electron'
 import * as pty from 'node-pty'
 import type { SpawnRequest } from '../shared/types'
@@ -119,14 +121,45 @@ export class PtyManager {
     done()
   }
 
+  /**
+   * The best shell on this machine, in the order a developer would pick.
+   *
+   * COMSPEC on Windows is cmd.exe, which is the wrong host for a CLI agent: no
+   * readline-style line editing, a different quoting dialect from everything an
+   * agent will suggest, and a scrollback that fights the one drawn here. So
+   * PowerShell 7 first, then the Windows PowerShell every installation already
+   * has, and cmd.exe only if both are somehow missing.
+   */
   private defaultShell(): string {
-    if (process.platform === 'win32') return process.env.COMSPEC || 'powershell.exe'
-    return process.env.SHELL || '/bin/zsh'
+    if (process.platform !== 'win32') return process.env.SHELL || '/bin/zsh'
+
+    const candidates = [
+      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'PowerShell', '7', 'pwsh.exe'),
+      path.join(
+        process.env.SystemRoot || 'C:\\Windows',
+        'System32',
+        'WindowsPowerShell',
+        'v1.0',
+        'powershell.exe'
+      )
+    ]
+    for (const candidate of candidates) {
+      try {
+        if (fs.existsSync(candidate)) return candidate
+      } catch {
+        /* unreadable path; try the next */
+      }
+    }
+    return process.env.COMSPEC || 'powershell.exe'
   }
 
   /** Login shells inherit the user's PATH, which is where `claude` usually lives. */
   private shellArgs(shell: string): string[] {
-    if (process.platform === 'win32') return []
+    if (process.platform === 'win32') {
+      // The banner is three lines of version blurb in front of every new pane,
+      // and in a twelve-up grid that is most of what you can see.
+      return /(pwsh|powershell)\.exe$/i.test(shell) ? ['-NoLogo'] : []
+    }
     return /(bash|zsh|fish)$/.test(shell) ? ['-l'] : []
   }
 
@@ -148,8 +181,10 @@ export class PtyManager {
     env.EAON_PANE = paneId
 
     // Launched from Finder there is no locale, and every box-drawing character
-    // in a CLI's UI turns to mojibake without one.
-    if (!env.LC_ALL && !env.LC_CTYPE && !env.LANG) {
+    // in a CLI's UI turns to mojibake without one. Windows has no such variable
+    // — the console's encoding is UTF-8 through ConPTY regardless — so setting
+    // it there would only mislead anything that reads it.
+    if (process.platform !== 'win32' && !env.LC_ALL && !env.LC_CTYPE && !env.LANG) {
       env.LANG = 'en_US.UTF-8'
     }
 
