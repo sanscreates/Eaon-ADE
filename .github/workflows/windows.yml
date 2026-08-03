@@ -1,11 +1,14 @@
 name: Windows build
 
-# Windows artifacts built on Windows. A macOS machine can cross-build them —
-# see `npm run dist:win` — but it cannot compile a native module for another
-# platform, so it depends on whatever prebuilt binaries the dependency happens
-# to ship. Here node-pty is compiled against this Electron version, and sharp
-# installs its own Windows binary, which is the arrangement that will still be
-# right after the next dependency bump.
+# Windows artifacts built on Windows, then installed and driven there.
+#
+# A macOS machine can cross-build these — see `npm run dist:win` — but it cannot
+# compile a native module for another platform, and it cannot run what it
+# produced. Everything that would actually break is native: ConPTY through
+# node-pty, the GPU renderer, the preload bridge. So the build happens here,
+# where node-pty is compiled against this Electron version and sharp installs
+# its own Windows binary, and the installer is then installed and put through
+# its paces before anyone is asked to trust it.
 
 on:
   workflow_dispatch:
@@ -17,6 +20,8 @@ on:
   push:
     tags:
       - 'v*'
+    branches:
+      - windows-support
 
 jobs:
   build:
@@ -42,7 +47,42 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: What was built
+        shell: pwsh
+        run: Get-ChildItem dist -File | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}} | Format-Table -AutoSize
+
+      # /S is NSIS's silent switch. The install is per-user, so it needs no
+      # elevation — the same path a person double-clicking would take.
+      - name: Install it
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist -Filter '*x64-setup.exe' | Select-Object -First 1
+          if (-not $setup) { throw 'no x64 installer was produced' }
+          Write-Host "installing $($setup.Name)"
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -PassThru -Wait
+          Write-Host "installer exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { throw "the installer failed with $($p.ExitCode)" }
+
+      - name: Find what it installed
+        id: installed
+        shell: pwsh
+        run: |
+          $roots = @("$env:LOCALAPPDATA\Programs", "$env:ProgramFiles", "${env:ProgramFiles(x86)}") |
+                   Where-Object { $_ -and (Test-Path $_) }
+          $exe = Get-ChildItem -Path $roots -Recurse -Filter 'Eaon ADE.exe' -ErrorAction SilentlyContinue |
+                 Select-Object -First 1
+          if (-not $exe) { throw 'the installer reported success but nothing was installed' }
+          Write-Host "installed at $($exe.FullName)"
+          "exe=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Does it run
+        shell: pwsh
+        env:
+          SMOKE_PORT: '9222'
+        run: node scripts/smoke-windows.mjs "${{ steps.installed.outputs.exe }}"
+
       - name: Keep the artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: eaon-ade-windows
