@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useActiveWorkspace, useStore } from './store/useStore'
-import { terminals } from './lib/terminals'
+import { terminals, terminalHasFocus } from './lib/terminals'
 import { applyTheme, resolveTheme } from './lib/theme'
 import { TitleBar } from './components/TitleBar'
 import { WorkspaceRail } from './components/WorkspaceRail'
@@ -15,10 +15,12 @@ import { PresetEditor } from './components/PresetEditor'
 import { Board } from './components/Board'
 import { Vault } from './components/Vault'
 import { Brain } from './components/Brain'
+import { Stats } from './components/Stats'
 import { DictationHUD } from './components/DictationHUD'
 import { UpdateCard } from './components/UpdateCard'
 import { dictation } from './lib/dictation'
 import { cancelDictation, startDictation, stopDictation, toggleDictation } from './lib/voice'
+import { announceFinished, hushSpeech } from './lib/speech'
 
 export function App(): React.JSX.Element {
   const ready = useStore((s) => s.ready)
@@ -26,7 +28,6 @@ export function App(): React.JSX.Element {
   const settings = useStore((s) => s.settings)
   const railOpen = useStore((s) => s.railOpen)
   const dockOpen = useStore((s) => s.dockOpen)
-  const surface = useStore((s) => s.surface)
   const wizard = useStore((s) => s.wizard)
   const paletteOpen = useStore((s) => s.paletteOpen)
   const settingsOpen = useStore((s) => s.settingsOpen)
@@ -79,6 +80,25 @@ export function App(): React.JSX.Element {
               workspaceId: ws?.id
             })
           }
+        },
+        onFinished: (paneId) => {
+          const s = store()
+          const ws = s.workspaces.find((w) => w.panes.some((p) => p.id === paneId))
+          const pane = ws?.panes.find((p) => p.id === paneId)
+          if (!ws || !pane) return
+          void announceFinished(
+            {
+              paneId,
+              paneName: pane.name,
+              // A bare shell goes quiet after every command it runs. Only a
+              // pane that was started with something in it has "finished"
+              // anything worth saying out loud.
+              isAgent: Boolean(pane.command),
+              watching:
+                document.hasFocus() && ws.id === s.activeWorkspaceId && ws.activePaneId === paneId
+            },
+            s.settings
+          )
         }
       },
       useStore.getState().settings
@@ -89,6 +109,8 @@ export function App(): React.JSX.Element {
     return () => {
       offData()
       offExit()
+      // A reload must not leave the last announcement talking over the boot.
+      hushSpeech()
     }
   }, [])
 
@@ -176,9 +198,22 @@ export function App(): React.JSX.Element {
         return
       }
 
-      // Any other key during the arming window means this was a shortcut, not
-      // a request to dictate.
-      if (hold.armed) disarm()
+      /*
+       * Any other key while the hold key is down means a chord, not speech.
+       *
+       * The hold key is Right ⌘ by default, which is also the first half of
+       * ⌘⌫, ⌘← and every other Command shortcut. Holding it for the moment it
+       * takes to reach the second key would otherwise open the microphone
+       * mid-shortcut and, on release, type whatever it had heard into the pane.
+       * The audio is discarded rather than transcribed.
+       */
+      if (hold.armed || hold.open) {
+        disarm()
+        if (hold.open) {
+          hold.open = false
+          cancelDictation()
+        }
+      }
     }
 
     const onKeyUp = (e: KeyboardEvent): void => {
@@ -213,7 +248,16 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const s = useStore.getState()
-      const mod = e.metaKey || e.ctrlKey
+      /*
+       * Control belongs to the shell whenever a terminal has the keyboard.
+       *
+       * Treating it as an app modifier everywhere quietly ate most of the
+       * terminal: ^D sent "add a pane" instead of end-of-file, ^K opened the
+       * command palette instead of killing the line, and ^E ^W ^F ^T ^B ^J went
+       * the same way. Command still reaches the app from inside a pane, which
+       * is what every ⌘ shortcut here is built on.
+       */
+      const mod = e.metaKey || (e.ctrlKey && !terminalHasFocus())
       if (!mod) return
       const ws = s.workspaces.find((w) => w.id === s.activeWorkspaceId) ?? null
       const key = e.key.toLowerCase()
@@ -222,6 +266,15 @@ export function App(): React.JSX.Element {
         e.preventDefault()
         e.stopPropagation()
         fn()
+      }
+
+      // While you are in the preview panel these zoom the page, and it handles
+      // them itself. Without this they would do both at once.
+      if (
+        document.activeElement?.closest('.browser') &&
+        ['=', '+', '-', '_', '0'].includes(key)
+      ) {
+        return
       }
 
       // Terminal font size, the way every terminal binds it.
@@ -240,7 +293,10 @@ export function App(): React.JSX.Element {
       if (key === ',') return take(() => s.setSettingsOpen(!s.settingsOpen))
       if (key === '/') return take(() => s.setResumeOpen(true))
 
-      if (ws) {
+      // Every shortcut below acts on panes, so they only mean anything in a
+      // workspace that has some. On the Board they would be asking a noticeboard
+      // to open a shell.
+      if (ws && ws.kind === 'terminals') {
         // Shift-D is dictation, handled above; plain D adds a pane.
         if (key === 'd' && !e.shiftKey) return take(() => s.addPane(ws.id))
         if (key === 'e' && ws.activePaneId) {
@@ -249,9 +305,11 @@ export function App(): React.JSX.Element {
         if (key === 'w' && ws.activePaneId) {
           return take(() => s.closePane(ws.id, ws.activePaneId as string))
         }
+        // The pane owns the search box; this is what opens it. Without this the
+        // binding did nothing at all — the comment here promised a search box
+        // that nothing ever asked for.
         if (key === 'f' && ws.activePaneId) {
-          // Leave find to the pane itself; it owns its own search box.
-          return
+          return take(() => s.setFindPane(ws.activePaneId))
         }
         const num = Number(e.key)
         if (!Number.isNaN(num) && num >= 1 && num <= 9 && ws.panes[num - 1]) {
@@ -270,7 +328,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const id = window.setTimeout(() => terminals.fitAll(), 220)
     return () => window.clearTimeout(id)
-  }, [railOpen, dockOpen, surface, wizard])
+  }, [railOpen, dockOpen, workspace?.id, wizard])
 
   // Dismissing a dialog should hand the keyboard back to the terminal.
   const anyOverlay = paletteOpen || settingsOpen || resumeOpen || presetEditorId !== null
@@ -297,11 +355,15 @@ export function App(): React.JSX.Element {
     // and holds it until you close it, with the workspace rail still alongside.
     if (settingsOpen) return <SettingsModal />
     if (wizard) return <SetupWizard />
-    if (surface === 'board') return <Board />
-    if (surface === 'vault') return <Vault />
-    if (surface === 'brain') return <Brain />
-    if (workspace) return <TerminalGrid workspace={workspace} />
-    return <Launcher />
+    if (!workspace) return <Launcher />
+    // What the stage shows is a property of the workspace you are in, not a
+    // separate mode laid over it. That is what lets the Board be somewhere you
+    // switch to and back from without disturbing a single running shell.
+    if (workspace.kind === 'board') return <Board />
+    if (workspace.kind === 'vault') return <Vault />
+    if (workspace.kind === 'brain') return <Brain />
+    if (workspace.kind === 'stats') return <Stats />
+    return <TerminalGrid workspace={workspace} />
   }
 
   return (

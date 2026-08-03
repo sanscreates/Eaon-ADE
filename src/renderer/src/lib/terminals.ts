@@ -40,7 +40,35 @@ const CONTEXT_PATTERNS: { re: RegExp; reportsRemaining: boolean }[] = [
 const MAC_LINE_EDITING: Record<string, string> = {
   ArrowLeft: '\x01', // beginning of line
   ArrowRight: '\x05', // end of line
-  Backspace: '\x15' // kill to the start of the line
+  Backspace: '\x15', // kill to the start of the line
+  Delete: '\x0b' // kill to the end of the line
+}
+
+/**
+ * Option + a navigation key, the way macOS moves and deletes by word.
+ *
+ * These are sent as meta-letter sequences rather than the modified arrow
+ * escapes xterm produces on its own. `ESC b` and `ESC f` are bound by readline
+ * itself, so they work in every shell, REPL and agent prompt without setup;
+ * `ESC[1;3D` needs the application to have been taught about it, and in bash it
+ * is not merely ignored — the tail of the sequence lands on the line as text.
+ */
+const WORD_EDITING: Record<string, string> = {
+  ArrowLeft: '\x1bb', // backward one word
+  ArrowRight: '\x1bf', // forward one word
+  Delete: '\x1bd' // kill the word ahead
+}
+
+/**
+ * True when the keyboard is inside a terminal pane.
+ *
+ * xterm takes keys through a hidden textarea, so "is a text field focused?" is
+ * not the same question and would answer yes for the wrong reasons.
+ */
+export function terminalHasFocus(): boolean {
+  const el = document.activeElement
+  if (!el) return false
+  return Boolean(el.classList?.contains('xterm-helper-textarea') || el.closest('.xterm'))
 }
 
 /** What should happen to a key pressed inside a pane. */
@@ -81,6 +109,12 @@ export function resolveKey(e: KeyLike): KeyVerdict {
     return { do: 'send', data: '\x1b\r' }
   }
 
+  // Option + arrows and forward-delete move and cut by word.
+  if (e.altKey && !e.metaKey && !e.ctrlKey) {
+    const word = WORD_EDITING[e.key]
+    if (word) return { do: 'send', data: word }
+  }
+
   // Command-key combos belong to the app, not the shell, apart from the handful
   // a terminal is expected to own itself.
   if (e.metaKey) {
@@ -105,11 +139,20 @@ export function resolveKey(e: KeyLike): KeyVerdict {
   return { do: 'terminal' }
 }
 
+/** Everything a pane needs to start the right thing in the right conversation. */
+export interface Launch {
+  command: string | null
+  agentId: string
+  sessionId: string | null
+}
+
 export interface TerminalEvents {
   onTitle: (paneId: string, title: string) => void
   onStatus: (paneId: string, status: PaneStatus) => void
   onContext: (paneId: string, pct: number) => void
   onExit: (paneId: string, code: number) => void
+  /** An agent worked for a while and then went quiet. `runMs` is how long. */
+  onFinished: (paneId: string, runMs: number) => void
 }
 
 interface Runtime {
@@ -124,18 +167,85 @@ interface Runtime {
   sentRows: number
   fitTimer: number | null
   lastData: number
+  /** When this pane last went from quiet to producing output. */
+  busySince: number
+  /** When bytes were last sent *to* the shell, from a key, a paste or a broadcast. */
+  lastInput: number
+  /** When the shell under this pane was started. */
+  spawnedAt: number
   status: PaneStatus
   /** Rolling plain-text tail used for status-line parsing. */
   tail: string
+  /** Raw output still to be folded into `tail`, drained on the ticker. */
+  pending: string[]
+  pendingLen: number
   contextPct: number | null
   spawned: boolean
   /** GPU renderer, or null when this pane fell back to the DOM one. */
   webgl: WebglAddon | null
+  /** How many times we have tried to get this pane back onto the GPU. */
+  renderRetries: number
   disposers: (() => void)[]
 }
 
 const TICK_MS = 400
 const IDLE_MS = 1800
+
+/**
+ * How long a pane must have been working on its own before going quiet counts
+ * as "the agent finished" — measured from the last thing you typed, not from
+ * the first byte out.
+ *
+ * That distinction is the whole trick. A CLI agent redraws its prompt box on
+ * every keystroke, so a pane is technically "producing output" the entire time
+ * you are composing a message, and pausing to think mid-sentence looks exactly
+ * like a run ending. Timing from the last keypress instead collapses that case
+ * to nothing, while a real run — where you pressed Return and then waited —
+ * measures the part you actually waited through.
+ */
+const MIN_RUN_MS = 4000
+
+/**
+ * Quiet window after a shell starts.
+ *
+ * Agents print a banner and spin up for a few seconds before settling at their
+ * prompt, which is a run by every measure above. You are still looking at the
+ * pane you just opened, so there is nothing to announce.
+ */
+const SETTLE_MS = 12000
+
+/** The timestamps the judgement below is made from. */
+export interface RunTimings {
+  now: number
+  /** When output last arrived. */
+  lastData: number
+  /** When output started again after a quiet spell. */
+  busySince: number
+  /** When bytes were last sent to the shell. */
+  lastInput: number
+  /** When the shell was started, or 0 if it never was. */
+  spawnedAt: number
+}
+
+/**
+ * Whether a pane going quiet was an agent finishing, or just you pausing.
+ *
+ * Split out from the ticker because it is the one piece of this feature that
+ * can be wrong in a way nobody notices until the app has been talking nonsense
+ * at them for an afternoon.
+ */
+export function looksFinished(t: RunTimings): boolean {
+  if (t.spawnedAt <= 0) return false
+  if (t.now - t.spawnedAt <= SETTLE_MS) return false
+  return t.lastData - Math.max(t.busySince, t.lastInput) >= MIN_RUN_MS
+}
+
+/**
+ * Raw output held for the next parse pass. Comfortably more than the 3000
+ * stripped characters the patterns look at, since escape sequences are most of
+ * what a full-screen CLI emits and all of it strips away.
+ */
+const PARSE_WINDOW = 16 * 1024
 
 /**
  * Owns every xterm instance. Terminals outlive their React components — each
@@ -164,13 +274,52 @@ class TerminalRegistry {
     for (const rt of this.panes.values()) rt.term.options.theme = palette
   }
 
+  /**
+   * Folds buffered output into the plain-text tail and re-reads the status
+   * line. Deferred off the write path deliberately: stripping escapes and
+   * running the patterns costs more than drawing the chunk did, and a flush
+   * arrives every 12ms per pane.
+   */
+  private digest(paneId: string, rt: Runtime): void {
+    if (!rt.pending.length) return
+    const raw = rt.pending.join('')
+    rt.pending.length = 0
+    rt.pendingLen = 0
+    rt.tail = (rt.tail + stripAnsi(raw)).slice(-3000)
+
+    for (const { re, reportsRemaining } of CONTEXT_PATTERNS) {
+      const m = rt.tail.match(re)
+      if (!m) continue
+      const value = Number(m[1])
+      if (value < 0 || value > 100) break
+      const used = reportsRemaining ? 100 - value : value
+      if (used !== rt.contextPct) {
+        rt.contextPct = used
+        this.events?.onContext(paneId, used)
+      }
+      break
+    }
+  }
+
   /** Drops panes back to idle once their output has been quiet long enough. */
   private tick(): void {
     const now = Date.now()
     for (const [id, rt] of this.panes) {
+      this.digest(id, rt)
       if (rt.status === 'live' && now - rt.lastData > IDLE_MS) {
         rt.status = 'idle'
         this.events?.onStatus(id, 'idle')
+
+        // Time from the last thing you typed to the last thing it printed.
+        const runMs = rt.lastData - Math.max(rt.busySince, rt.lastInput)
+        const timings: RunTimings = {
+          now,
+          lastData: rt.lastData,
+          busySince: rt.busySince,
+          lastInput: rt.lastInput,
+          spawnedAt: rt.spawnedAt
+        }
+        if (looksFinished(timings)) this.events?.onFinished(id, runMs)
       }
     }
   }
@@ -228,11 +377,17 @@ class TerminalRegistry {
       sentRows: 0,
       fitTimer: null,
       lastData: 0,
+      busySince: 0,
+      lastInput: 0,
+      spawnedAt: 0,
       status: 'idle',
       tail: '',
+      pending: [],
+      pendingLen: 0,
       contextPct: null,
       spawned: false,
       webgl: null,
+      renderRetries: 0,
       disposers: []
     }
 
@@ -241,11 +396,17 @@ class TerminalRegistry {
     // the box-drawing set as exact rectangles. The DOM renderer draws them as
     // font glyphs in separately positioned cells, and fractional cell metrics
     // leave hairline cracks through anything meant to be solid.
-    this.attachRenderer(rt)
+    this.attachRenderer(paneId, rt)
 
     const listeners = [
-      term.onData((data) => window.eaon.pty.write(paneId, data)),
-      term.onBinary((data) => window.eaon.pty.write(paneId, data)),
+      term.onData((data) => {
+        rt.lastInput = Date.now()
+        window.eaon.pty.write(paneId, data)
+      }),
+      term.onBinary((data) => {
+        rt.lastInput = Date.now()
+        window.eaon.pty.write(paneId, data)
+      }),
       term.onTitleChange((title) => {
         const clean = title.trim()
         if (clean) this.events?.onTitle(paneId, clean)
@@ -287,16 +448,32 @@ class TerminalRegistry {
    * browser drops the oldest when too many are alive — so it must degrade
    * quietly rather than leave a pane blank.
    */
-  private attachRenderer(rt: Runtime): void {
+  private attachRenderer(paneId: string, rt: Runtime): void {
     try {
       const addon = new WebglAddon()
       addon.onContextLoss(() => {
+        // Disposing is what hands the pane back to the DOM renderer; without
+        // it the terminal keeps drawing into a dead context and shows nothing.
         try {
           addon.dispose()
         } catch {
           /* already gone */
         }
         rt.webgl = null
+
+        /*
+         * Then try to get back onto the GPU. A lost context nearly always
+         * means the GPU process restarted, and the next one succeeds. Left
+         * alone, every pane open at that moment would spend the rest of the
+         * session on the DOM renderer — which is a great deal slower, and is
+         * where "it was fine and then it got sluggish" comes from.
+         */
+        if (rt.renderRetries >= 3) return
+        rt.renderRetries += 1
+        window.setTimeout(() => {
+          if (this.panes.get(paneId) !== rt || rt.webgl) return
+          this.attachRenderer(paneId, rt)
+        }, 800 * rt.renderRetries)
       })
       rt.term.loadAddon(addon)
       rt.webgl = addon
@@ -383,17 +560,23 @@ class TerminalRegistry {
   }
 
   /** Starts the shell for a pane, once. */
-  async spawn(paneId: string, cwd: string, command: string | null, settings: Settings): Promise<void> {
+  async spawn(paneId: string, cwd: string, launch: Launch, settings: Settings): Promise<void> {
     const rt = this.ensure(paneId, settings)
     if (rt.spawned) return
     rt.spawned = true
+    rt.spawnedAt = Date.now()
     const res = await window.eaon.pty.spawn({
       paneId,
       cwd,
       cols: rt.term.cols || 80,
       rows: rt.term.rows || 24,
       shell: settings.shell || undefined,
-      command
+      command: launch.command,
+      // Carried through so the main process can decide whether this pane is
+      // starting a conversation or reopening one. It is the side that can see
+      // the transcripts, so it is the side that decides.
+      agentId: launch.agentId,
+      sessionId: launch.sessionId
     })
     if (!res.ok) {
       rt.spawned = false
@@ -411,7 +594,7 @@ class TerminalRegistry {
    * shell with nothing on screen. Holding on to the host element across the
    * swap is what keeps the restarted session visible.
    */
-  restart(paneId: string, cwd: string, command: string | null, settings: Settings): void {
+  restart(paneId: string, cwd: string, launch: Launch, settings: Settings): void {
     const host = this.panes.get(paneId)?.host ?? null
     this.dispose(paneId)
     this.ensure(paneId, settings)
@@ -422,7 +605,7 @@ class TerminalRegistry {
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         this.fit(paneId)
-        void this.spawn(paneId, cwd, command, settings)
+        void this.spawn(paneId, cwd, launch, settings)
         // Restarting is always something you asked for, so the caret belongs
         // in the pane you asked about.
         this.focus(paneId)
@@ -438,23 +621,17 @@ class TerminalRegistry {
     rt.lastData = Date.now()
 
     if (rt.status !== 'live') {
+      rt.busySince = rt.lastData
       rt.status = 'live'
       this.events?.onStatus(paneId, 'live')
     }
 
-    rt.tail = (rt.tail + stripAnsi(data)).slice(-3000)
-
-    for (const { re, reportsRemaining } of CONTEXT_PATTERNS) {
-      const m = rt.tail.match(re)
-      if (!m) continue
-      const raw = Number(m[1])
-      if (raw < 0 || raw > 100) break
-      const used = reportsRemaining ? 100 - raw : raw
-      if (used !== rt.contextPct) {
-        rt.contextPct = used
-        this.events?.onContext(paneId, used)
-      }
-      break
+    // Held for the ticker rather than parsed here; see digest(). Only the tail
+    // is ever read, so anything older than the window can go now.
+    rt.pending.push(data)
+    rt.pendingLen += data.length
+    while (rt.pendingLen > PARSE_WINDOW && rt.pending.length > 1) {
+      rt.pendingLen -= rt.pending.shift()!.length
     }
   }
 
@@ -479,11 +656,18 @@ class TerminalRegistry {
   looksBlocked(paneId: string): boolean {
     const rt = this.panes.get(paneId)
     if (!rt) return false
+    // Asked for on demand, so it must not answer from a tail the ticker has
+    // not caught up with yet.
+    this.digest(paneId, rt)
     const tail = rt.tail.slice(-600)
     return WAITING.some((re) => re.test(tail))
   }
 
   send(paneId: string, text: string): void {
+    const rt = this.panes.get(paneId)
+    // A broadcast from the conductor is input too — without this, the reply it
+    // provokes would be timed from the pane's last keystroke instead.
+    if (rt) rt.lastInput = Date.now()
     window.eaon.pty.write(paneId, text)
   }
 
@@ -551,6 +735,8 @@ class TerminalRegistry {
     if (!rt) return
     window.eaon.pty.kill(paneId)
     if (rt.fitTimer !== null) window.clearTimeout(rt.fitTimer)
+    rt.pending.length = 0
+    rt.pendingLen = 0
     this.resizeListeners.delete(paneId)
     // Free the GPU context explicitly; there is a hard cap on live ones.
     try {

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { EditorState, type Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { tags as t } from '@lezer/highlight'
 import { basicSetup } from 'codemirror'
 import { css } from '@codemirror/lang-css'
 import { html } from '@codemirror/lang-html'
@@ -17,7 +19,10 @@ import { basename } from '../lib/util'
 /** Reads through the same custom properties as the rest of the app, so the
  *  editor repaints with the theme without being rebuilt. */
 const THEME = EditorView.theme({
-  '&': { color: 'var(--text-mid)', backgroundColor: 'transparent', height: '100%' },
+  // Full-strength foreground: this is code, and anything the highlighter does
+  // not claim is an identifier, which should read as text rather than as an
+  // aside. The muted greys are spent deliberately, on comments and punctuation.
+  '&': { color: 'var(--text-hi)', backgroundColor: 'transparent', height: '100%' },
   '.cm-content': { caretColor: 'var(--accent)', fontFamily: 'var(--font-mono)' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--accent)' },
   '&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
@@ -35,6 +40,107 @@ const THEME = EditorView.theme({
   '.cm-selectionMatch': { backgroundColor: 'var(--accent-wash)' },
   '.cm-searchMatch': { backgroundColor: 'var(--accent-wash)', outline: '1px solid var(--accent-edge)' }
 })
+
+/**
+ * What the code actually looks like.
+ *
+ * `basicSetup` brings CodeMirror's own default highlighting, which is built for
+ * a white page — its blues and greens are near-black, and on this app's ink the
+ * only tokens that survive are strings and comments. That is why code here read
+ * as red and grey: everything else was being painted, just in colours that could
+ * not be seen. This replaces it (a non-fallback highlighter takes precedence
+ * over the default) with one drawn from the active theme.
+ *
+ * Colours arrive as custom properties rather than literals, so the whole thing
+ * repaints when the theme changes without the editor being rebuilt.
+ */
+export const HIGHLIGHT = HighlightStyle.define([
+  // Keywords and the words that control flow.
+  {
+    tag: [
+      t.keyword,
+      t.controlKeyword,
+      t.definitionKeyword,
+      t.moduleKeyword,
+      t.operatorKeyword,
+      t.modifier,
+      t.self,
+      t.null
+    ],
+    color: 'var(--syn-keyword)'
+  },
+  // Text the program carries around.
+  {
+    tag: [t.string, t.special(t.string), t.docString, t.character, t.inserted],
+    color: 'var(--syn-string)'
+  },
+  // Values that are literally themselves.
+  {
+    tag: [t.number, t.integer, t.float, t.bool, t.atom, t.unit, t.constant(t.name)],
+    color: 'var(--syn-number)'
+  },
+  // Things you call.
+  {
+    tag: [
+      t.function(t.variableName),
+      t.function(t.propertyName),
+      t.definition(t.function(t.variableName)),
+      t.macroName,
+      t.labelName
+    ],
+    color: 'var(--syn-function)'
+  },
+  // Things that name a shape.
+  {
+    tag: [t.typeName, t.className, t.namespace, t.definition(t.typeName), t.standard(t.typeName)],
+    color: 'var(--syn-type)'
+  },
+  // Markup, and the escapes that behave like it.
+  {
+    tag: [t.tagName, t.angleBracket, t.regexp, t.escape, t.deleted, t.color],
+    color: 'var(--syn-tag)'
+  },
+  { tag: [t.attributeName], color: 'var(--syn-attr)' },
+  { tag: [t.attributeValue], color: 'var(--syn-string)' },
+  {
+    tag: [t.propertyName, t.definition(t.propertyName), t.variableName, t.definition(t.variableName)],
+    color: 'var(--syn-name)'
+  },
+  {
+    tag: [
+      t.operator,
+      t.arithmeticOperator,
+      t.logicOperator,
+      t.compareOperator,
+      t.bitwiseOperator,
+      t.updateOperator,
+      t.definitionOperator,
+      t.typeOperator,
+      t.derefOperator
+    ],
+    color: 'var(--syn-operator)'
+  },
+  {
+    tag: [t.punctuation, t.separator, t.bracket, t.squareBracket, t.paren, t.brace],
+    color: 'var(--syn-punct)'
+  },
+  {
+    tag: [t.comment, t.lineComment, t.blockComment, t.docComment, t.meta, t.processingInstruction],
+    color: 'var(--syn-comment)',
+    fontStyle: 'italic'
+  },
+  { tag: [t.invalid], color: 'var(--syn-invalid)' },
+
+  // Prose. Markdown is a first-class thing to be reading in here.
+  { tag: [t.heading], color: 'var(--syn-heading)', fontWeight: '600' },
+  { tag: [t.link, t.url], color: 'var(--syn-link)', textDecoration: 'underline' },
+  { tag: [t.emphasis], fontStyle: 'italic' },
+  { tag: [t.strong], fontWeight: '700', color: 'var(--syn-name)' },
+  { tag: [t.strikethrough], textDecoration: 'line-through' },
+  { tag: [t.quote], color: 'var(--syn-comment)' },
+  { tag: [t.list], color: 'var(--syn-keyword)' },
+  { tag: [t.monospace], color: 'var(--syn-string)' }
+])
 
 function languageFor(file: string): Extension[] {
   const ext = file.split('.').pop()?.toLowerCase() ?? ''
@@ -139,6 +245,9 @@ export function EditorPanel({ cwd }: { cwd: string }): React.JSX.Element {
         extensions: [
           basicSetup,
           THEME,
+          // After basicSetup on purpose: its default highlighter is registered
+          // as a fallback, so this one supersedes it rather than fighting it.
+          syntaxHighlighting(HIGHLIGHT),
           ...languageFor(file),
           EditorView.updateListener.of((u) => {
             if (!u.docChanged) return

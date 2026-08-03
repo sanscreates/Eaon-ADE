@@ -1,0 +1,251 @@
+/* Plan usage: the title-bar pill and the panel it opens. */
+
+.usage-root {
+  position: relative;
+  display: inline-flex;
+}
+
+.usage-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line-200);
+  background: var(--ink-100);
+  color: var(--text-mid);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+  transition:
+    color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+.usage-pill:hover,
+.usage-pill[data-on='true'] {
+  color: var(--text-hi);
+  border-color: var(--line-300);
+  background: var(--ink-200);
+}
+
+.usage-pill-figure {
+  color: var(--text-hi);
+}
+.usage-pill-sep,
+.usage-pill-unit {
+  color: var(--text-dim);
+}
+
+/*
+ * One bar, used at three sizes. Colour only enters as it fills: a meter that is
+ * always coloured says nothing, and the point of this readout is to be ignorable
+ * until it is not.
+ */
+.usage-meter {
+  display: block;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ink-400);
+  overflow: hidden;
+}
+.usage-meter i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--text-lo);
+  transition:
+    width 260ms var(--ease),
+    background var(--dur) var(--ease);
+}
+.usage-meter[data-level='mid'] i {
+  background: var(--accent);
+}
+.usage-meter[data-level='high'] i {
+  background: var(--attention);
+}
+/* Shares stay quiet — see the note in UsagePill. */
+.usage-meter[data-level='share'] i {
+  background: var(--text-lo);
+}
+
+/* ---- the panel ---------------------------------------------------------- */
+
+.usage-panel {
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 70;
+  width: 320px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--line-200);
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-lg);
+  animation: usage-in 160ms var(--ease) both;
+  overflow: hidden;
+}
+
+@keyframes usage-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.usage-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 10px 9px 14px;
+}
+
+.usage-title {
+  font-size: var(--fs-md);
+  color: var(--text-hi);
+}
+
+.usage-source {
+  flex: 1;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+
+.usage-tabs {
+  display: flex;
+  gap: 2px;
+  margin: 0 12px 4px;
+  padding: 2px;
+  border-radius: var(--r-md);
+  background: var(--ink-100);
+}
+.usage-tabs button {
+  flex: 1;
+  height: 26px;
+  border-radius: calc(var(--r-md) - 2px);
+  color: var(--text-lo);
+  font-size: var(--fs-sm);
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.usage-tabs button[data-on='true'] {
+  background: var(--ink-300);
+  color: var(--text-hi);
+}
+
+.usage-body {
+  padding: 8px 14px 4px;
+}
+
+.usage-window + .usage-window {
+  margin-top: 14px;
+}
+
+.usage-window-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.usage-window-name {
+  font-size: var(--fs-sm);
+  color: var(--text-hi);
+}
+.usage-window-reset {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+.usage-window-pct {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  color: var(--text-hi);
+}
+
+/* The bar inside the panel spans the card rather than the pill's 34px. */
+.usage-window .usage-meter,
+.usage-model .usage-meter {
+  width: auto;
+  flex: 1;
+  height: 5px;
+}
+.usage-window .usage-meter {
+  width: 100%;
+}
+
+.usage-window-detail {
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-lo);
+}
+
+.usage-models {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-100);
+}
+
+.usage-model {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 8px;
+}
+.usage-model-name {
+  width: 74px;
+  flex: 0 0 auto;
+  font-size: var(--fs-sm);
+  color: var(--text-mid);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.usage-model-figure {
+  width: 46px;
+  flex: 0 0 auto;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-lo);
+}
+
+.usage-foot {
+  margin-top: 12px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--line-100);
+}
+
+.usage-note,
+.usage-warn {
+  display: block;
+  font-size: var(--fs-micro);
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+.usage-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--attention);
+}
+
+.usage-more {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 9px;
+  color: var(--text-mid);
+  font-size: var(--fs-sm);
+  transition: color var(--dur) var(--ease);
+}
+.usage-more:hover {
+  color: var(--text-hi);
+}

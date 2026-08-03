@@ -30,6 +30,8 @@ export function BrainGraph({
   const nodesRef = useRef<Node[]>([])
   const hoverRef = useRef<string | null>(null)
   const selectedRef = useRef(selected)
+  /** Set by the simulation effect, so the handlers below can ask for a frame. */
+  const paint = useRef<{ wake: () => void; redraw: () => void } | null>(null)
 
   useEffect(() => {
     selectedRef.current = selected
@@ -74,8 +76,10 @@ export function BrainGraph({
 
     let raf = 0
     let alpha = 1
+    let running = false
+    let stillFrames = 0
 
-    const step = (): void => {
+    const step = (): number => {
       const nodes = nodesRef.current
       const byId = new Map(nodes.map((n) => [n.slug, n]))
 
@@ -147,6 +151,11 @@ export function BrainGraph({
         }
       }
       alpha = Math.max(0.12, alpha * 0.995)
+
+      // How much the layout is still moving, so the loop knows when to stop.
+      let energy = 0
+      for (const n of nodes) energy += n.vx * n.vx + n.vy * n.vy
+      return nodes.length ? energy / nodes.length : 0
     }
 
     const draw = (): void => {
@@ -223,14 +232,61 @@ export function BrainGraph({
       ctx.restore()
     }
 
+    /*
+     * The simulation runs until the layout stops moving, then stops.
+     *
+     * Repulsion is O(n²) and it was being paid sixty times a second for as
+     * long as this panel stayed open, on a graph that had finished arranging
+     * itself within a couple of seconds. On a laptop that is a fan spinning up
+     * to redraw the same picture. Anything that changes what is on screen —
+     * hovering a node, picking one, new memories arriving — wakes it again.
+     */
     const frame = (): void => {
-      step()
+      const energy = step()
       draw()
+
+      stillFrames = energy < 0.02 ? stillFrames + 1 : 0
+      if (stillFrames > 30) {
+        running = false
+        raf = 0
+        return
+      }
       raf = requestAnimationFrame(frame)
     }
-    frame()
-    return () => cancelAnimationFrame(raf)
+
+    const wake = (): void => {
+      stillFrames = 0
+      if (running) return
+      running = true
+      raf = requestAnimationFrame(frame)
+    }
+
+    // Hover and selection change what is drawn but move nothing, so they only
+    // need the one repaint.
+    paint.current = { wake, redraw: draw }
+    wake()
+
+    return () => {
+      running = false
+      if (raf) cancelAnimationFrame(raf)
+      paint.current = null
+    }
   }, [graph])
+
+  // A different node highlighted is a different picture.
+  useEffect(() => {
+    paint.current?.redraw()
+  }, [selected])
+
+  // The canvas sizes its bitmap inside draw(), so with the loop stopped a
+  // resize would leave the old one stretched across the new box.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const observer = new ResizeObserver(() => paint.current?.redraw())
+    observer.observe(canvas)
+    return () => observer.disconnect()
+  }, [])
 
   const hit = (e: React.MouseEvent): string | null => {
     const canvas = canvasRef.current
@@ -253,10 +309,16 @@ export function BrainGraph({
       className="brain-canvas"
       onMouseMove={(e) => {
         const slug = hit(e)
-        hoverRef.current = slug
+        if (slug !== hoverRef.current) {
+          hoverRef.current = slug
+          paint.current?.redraw()
+        }
         if (canvasRef.current) canvasRef.current.style.cursor = slug ? 'pointer' : 'default'
       }}
-      onMouseLeave={() => (hoverRef.current = null)}
+      onMouseLeave={() => {
+        hoverRef.current = null
+        paint.current?.redraw()
+      }}
       onClick={(e) => {
         const slug = hit(e)
         if (slug) onSelect(slug)

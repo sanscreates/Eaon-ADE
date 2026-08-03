@@ -45,11 +45,11 @@ const MODES: Mode[] = [
 
 export function Launcher(): React.JSX.Element {
   const openWizard = useStore((s) => s.openWizard)
-  const setSurface = useStore((s) => s.setSurface)
+  const openPanel = useStore((s) => s.openPanel)
 
   const pick = (mode: SurfaceId): void => {
     if (mode === 'grid' || mode === 'swarm') openWizard(mode)
-    else setSurface(mode)
+    else openPanel(mode)
   }
 
   return (
@@ -68,7 +68,7 @@ export function Launcher(): React.JSX.Element {
           Run the room.
           <span className="launcher-caret" aria-hidden="true" />
         </h1>
-        <p className="launcher-sub">Four surfaces. Pick where you start.</p>
+        <p className="launcher-sub">Pick where you start.</p>
 
         <div className="modes">
           {MODES.map((m) => {

@@ -3,13 +3,14 @@ import { Bell, LayoutGrid, PanelLeft, PanelRight, Settings2 } from 'lucide-react
 import { useActiveWorkspace, useStore } from '../store/useStore'
 import { shortPath } from '../lib/util'
 import { Logo } from './Logo'
-import type { SurfaceId } from '@shared/types'
+import { UsagePill } from './UsagePill'
+import type { PanelKind } from '../store/useStore'
 
-const SURFACES: { id: SurfaceId; label: string }[] = [
-  { id: 'grid', label: 'Grid' },
+const PANELS: { id: PanelKind; label: string }[] = [
   { id: 'board', label: 'Board' },
   { id: 'vault', label: 'Vault' },
-  { id: 'brain', label: 'Brain' }
+  { id: 'brain', label: 'Brain' },
+  { id: 'stats', label: 'Stats' }
 ]
 
 export function TitleBar(): React.JSX.Element {
@@ -21,8 +22,7 @@ export function TitleBar(): React.JSX.Element {
   const settingsOpen = useStore((s) => s.settingsOpen)
   const update = useStore((s) => s.update)
   const dismissUpdate = useStore((s) => s.dismissUpdate)
-  const surface = useStore((s) => s.surface)
-  const setSurface = useStore((s) => s.setSurface)
+  const openPanel = useStore((s) => s.openPanel)
   const notices = useStore((s) => s.notices)
   const clearNotices = useStore((s) => s.clearNotices)
   const version = useStore((s) => s.appVersion)
@@ -79,29 +79,30 @@ export function TitleBar(): React.JSX.Element {
       </div>
 
       <div className="titlebar-actions">
+        <UsagePill />
         <div style={{ position: 'relative' }} ref={menuRef}>
           <button
             className="icon-btn"
             data-on={menuOpen}
             onClick={() => setMenuOpen((v) => !v)}
-            title="Switch surface"
-            aria-label="Switch surface"
+            title="Board, Vault and Brain"
+            aria-label="Open a panel"
           >
             <LayoutGrid size={15} />
           </button>
           {menuOpen && (
             <div className="pane-menu" style={{ top: 30, right: 0, minWidth: 150 }}>
-              {SURFACES.map((s) => (
+              {PANELS.map((p) => (
                 <button
-                  key={s.id}
+                  key={p.id}
                   className="menu-item"
                   onClick={() => {
-                    setSurface(s.id)
+                    openPanel(p.id)
                     setMenuOpen(false)
                   }}
                 >
-                  {s.label}
-                  {surface === s.id && <span className="kbd">on</span>}
+                  {p.label}
+                  {workspace?.kind === p.id && <span className="kbd">open</span>}
                 </button>
               ))}
             </div>

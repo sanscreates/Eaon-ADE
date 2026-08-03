@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import {
   Bot,
+  Compass,
+  Gauge,
   Info,
   Keyboard,
   Mic,
@@ -8,22 +10,38 @@ import {
   Palette,
   Plus,
   Terminal,
+  Volume2,
   X
 } from 'lucide-react'
 import { ACCENT_OVERRIDES, THEMES } from '@shared/themes'
+import { SEARCH_ENGINES, engineById } from '@shared/browser'
 import { useStore } from '../store/useStore'
 import { MOD } from '../lib/util'
 import { ThemeCard } from './ThemeCard'
 import { VoicePanel } from './VoicePanel'
+import { SpeechPanel } from './SpeechPanel'
 import { UpdateSetting } from './UpdateSetting'
+import { UsageSettings } from './UsageSettings'
 
-type SectionId = 'appearance' | 'terminal' | 'agents' | 'voice' | 'shortcuts' | 'about'
+type SectionId =
+  | 'appearance'
+  | 'terminal'
+  | 'browser'
+  | 'agents'
+  | 'usage'
+  | 'voice'
+  | 'speech'
+  | 'shortcuts'
+  | 'about'
 
 const SECTIONS: { id: SectionId; label: string; icon: typeof Palette }[] = [
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'terminal', label: 'Terminal', icon: Terminal },
+  { id: 'browser', label: 'Browser', icon: Compass },
   { id: 'agents', label: 'Agents', icon: Bot },
+  { id: 'usage', label: 'Plan usage', icon: Gauge },
   { id: 'voice', label: 'Voice', icon: Mic },
+  { id: 'speech', label: 'Spoken alerts', icon: Volume2 },
   { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
   { id: 'about', label: 'About', icon: Info }
 ]
@@ -44,9 +62,13 @@ const SHORTCUTS: { keys: string; what: string }[] = [
   { keys: 'Esc', what: 'Discard what you are dictating' },
   { keys: `${MOD},`, what: 'Settings' },
   { keys: `${MOD}C / ${MOD}V`, what: 'Copy and paste inside a terminal' },
+  { keys: `${MOD}F`, what: 'Find in the focused pane' },
   { keys: '⇧Return', what: 'New line in a pane, without sending' },
   { keys: `${MOD}← / ${MOD}→`, what: 'Start and end of the line in a pane' },
-  { keys: `${MOD}⌫`, what: 'Delete to the start of the line in a pane' }
+  { keys: `${MOD}⌫ / ${MOD}⌦`, what: 'Delete to the start / end of the line' },
+  { keys: '⌥← / ⌥→', what: 'Move a word at a time in a pane' },
+  { keys: '⌥⌫ / ⌥⌦', what: 'Delete a word behind / ahead' },
+  { keys: 'Ctrl + anything', what: 'Always goes to the shell, never to Eaon ADE' }
 ]
 
 function Toggle({
@@ -341,6 +363,77 @@ export function SettingsModal(): React.JSX.Element | null {
               </>
             )}
 
+            {section === 'browser' && (
+              <>
+                <p className="settings-lede">
+                  The preview panel is an ordinary browser pointed at what you are building. It
+                  opens on a dev server, and the address bar takes a bare port — type 5173 and it
+                  goes there.
+                </p>
+
+                <Row
+                  name="Search engine"
+                  desc="Used when the address bar is given words instead of an address. Nothing is sent anywhere until you press Return."
+                >
+                  <select
+                    className="select"
+                    value={settings.browserSearchEngine}
+                    onChange={(e) => update({ browserSearchEngine: e.target.value })}
+                  >
+                    {SEARCH_ENGINES.map((e) => (
+                      <option key={e.id} value={e.id}>
+                        {e.label}
+                      </option>
+                    ))}
+                  </select>
+                </Row>
+                <p className="setting-desc" style={{ margin: '-6px 0 4px' }}>
+                  {engineById(settings.browserSearchEngine).note}
+                </p>
+
+                <Row
+                  name="Home address"
+                  desc="Where the panel opens. It follows you as you browse, so it is usually the last place you were."
+                >
+                  <input
+                    className="select mono"
+                    value={settings.browserHome}
+                    spellCheck={false}
+                    aria-label="Home address"
+                    onChange={(e) => update({ browserHome: e.target.value })}
+                  />
+                </Row>
+
+                <Row name="Page zoom" desc="Applies to every page in the panel. ⌘0 resets it.">
+                  <div className="stepper-num">
+                    <button
+                      className="icon-btn"
+                      onClick={() =>
+                        update({
+                          browserZoom: Math.max(0.5, Number((settings.browserZoom - 0.1).toFixed(2)))
+                        })
+                      }
+                      aria-label="Smaller"
+                    >
+                      <Minus size={12} />
+                    </button>
+                    <span>{Math.round(settings.browserZoom * 100)}%</span>
+                    <button
+                      className="icon-btn"
+                      onClick={() =>
+                        update({
+                          browserZoom: Math.min(2.5, Number((settings.browserZoom + 0.1).toFixed(2)))
+                        })
+                      }
+                      aria-label="Larger"
+                    >
+                      <Plus size={12} />
+                    </button>
+                  </div>
+                </Row>
+              </>
+            )}
+
             {section === 'agents' && (
               <>
                 <p className="settings-lede">
@@ -419,6 +512,10 @@ export function SettingsModal(): React.JSX.Element | null {
             )}
 
             {section === 'voice' && <VoicePanel />}
+
+            {section === 'speech' && <SpeechPanel />}
+
+            {section === 'usage' && <UsageSettings />}
 
             {section === 'shortcuts' && (
               <>

@@ -91,17 +91,77 @@ acted on it, so there is no auto-send setting to turn on by accident. The
 transcript's whitespace is flattened for the same reason: a newline inside a
 pasted phrase would submit the line before you could read it.
 
+**Spoken alerts** — when an agent stops working, its pane says so out loud:
+"Ada has finished." Worth having when eight of them are running and watching the
+grid is not what you want to be doing. Off until you turn it on in Settings ›
+Spoken alerts, where you also pick the voice, the speed and the volume. The
+synthesiser is macOS's own — nothing is downloaded, nothing is sent anywhere,
+and an announcement costs one short-lived process rather than a speech model
+sitting in memory. Only panes running an agent are announced, a run has to have
+lasted a few seconds after the last thing you typed, and the same pane will not
+be announced twice inside twenty seconds. If your Mac only has Apple's basic
+voices, the panel says so and takes you to where the natural-sounding ones are
+downloaded.
+
 **Swarm** — hand the same opening prompt to every pane in a new workspace and
 compare what comes back.
 
-**Resume** (`⌘/`) — reads the transcripts Claude Code and Codex leave on disk and
-offers them back as real `--resume` commands. Resume one into the current
-workspace or open a dozen at once in a new one.
+**Your sessions come back on their own.** Close the app with a dozen agents
+running, open it again, and each pane returns to the conversation it was having
+— no picker, no `--resume` typed by hand.
+
+It works by naming the conversation before the agent has run once: a pane is
+given a UUID at birth and started with `claude --session-id <uuid>`, so pane and
+conversation are bound from the first moment. On every later launch the main
+process looks for that transcript on disk and starts `claude --resume <uuid>`
+instead. Deciding at spawn time, from what is actually on disk, is what makes it
+self-correcting — an agent you started but never spoke to leaves no transcript,
+so that pane simply opens fresh rather than failing to reopen nothing.
+
+The alternative — matching panes to the most recent transcripts in a folder — is
+a coin toss the moment two panes share one, and a pane silently adopting
+somebody else's conversation is worse than starting clean.
+
+**Resume** (`⌘/`) — still there for reaching *other* conversations: it reads the
+transcripts Claude Code and Codex leave on disk and offers them back as real
+`--resume` commands. Resume one into the current workspace or open a dozen at
+once in a new one.
+
+**Plan usage** — a pill in the title bar showing how full your five-hour and
+weekly windows are, and when each next eases. It opens onto the detail: each
+window against its limit, and where the week went by model.
+
+The numbers come from the transcripts Claude Code already writes, so the token
+counts are exact and nothing leaves the machine. What is *not* on disk anywhere
+is the plan's ceiling — Anthropic reports that per request — so the percentage
+is measured against a limit you can set in Settings › Plan usage, and the
+honest figure (tokens spent, and the countdown) is the one shown first. Half a
+gigabyte of transcripts is read once at about two seconds; after that a refresh
+parses only the bytes appended since, which takes single-digit milliseconds.
+
+If you want Anthropic's own percentages instead, there is a switch for it. It is
+off by default because turning it on lets the app read Claude Code's sign-in
+token and make a request as you.
 
 **Board** — a queue for work you have not started. Hand a card to a pane and the
 card text becomes the prompt.
 
 **Vault** — prompts and context you keep re-typing, one click from any session.
+
+**Board, Vault and Brain open as workspaces.** They join the rail beside your
+terminal workspaces rather than taking over the screen, so looking something up
+is switching to it and switching back — your shells keep running and you never
+have to close a panel to reach them. Each one is a single entry that follows the
+folder you opened it from and wears that project's colour; opening it again
+brings it forward instead of stacking up duplicates.
+
+**Drag a file onto a pane** — and its path is typed onto the prompt, escaped,
+exactly as dragging onto any terminal does. That is how you hand an agent a
+screenshot: drop it on the pane, say what to do with it, then send. An image
+dragged straight out of a web page has no file of its own, so it is written to
+a temporary one first and that path is used instead. Nothing is ever sent for
+you, and a file dropped anywhere else in the window is refused rather than
+opened — a stray drop used to replace the whole interface.
 
 **A terminal that behaves like one** — right-click for copy, paste, select all,
 find and clear. `⌘=` / `⌘-` / `⌘0` change the font size and re-fit every pane,
@@ -119,6 +179,13 @@ that is the normal state before the first release exists.
 **Side panel** (`⌘⇧B`) — a file editor with syntax highlighting and autosave, a
 git panel with staging, diffs and commits, and a tools panel that runs commands
 in the focused pane and lists the scripts in the repo's `package.json`.
+
+The editor's syntax colours come from the active theme's own terminal palette —
+sixteen colours already chosen to be legible against exactly that background —
+so highlighting belongs to whichever theme you picked and agrees with the
+terminal running beside it. Six hues carry meaning (keywords, strings, numbers,
+calls, types, markup) and two greys recede (comments, punctuation); anything
+else keeps the plain foreground, so colour marks only what is worth marking.
 
 **Preview browser** — the window onto whatever your agents are building, next to
 the terminal that is building it. It probes the usual dev-server ports and shows
@@ -155,10 +222,20 @@ Inside a pane:
 | `⇧Return` | New line without sending — sends `ESC CR`, which is what CLI agents read as "newline, do not submit" |
 | `⌥Return` | The same thing, via Option-as-Meta |
 | `⌘←` / `⌘→` | Start / end of line |
-| `⌘⌫` | Delete to the start of the line |
+| `⌘⌫` / `⌘⌦` | Delete to the start / end of the line |
+| `⌥←` / `⌥→` | Back / forward one word |
+| `⌥⌫` / `⌥⌦` | Delete the word behind / ahead |
 | `⌘C` / `⌘V` / `⌘A` | Copy, paste, select all |
+| `⌘F` | Find in this pane's output |
+| **every `⌃` combo** | **Goes straight to the shell** — `^C`, `^D`, `^A`, `^E`, `^K`, `^U`, `^W`, `^R`, `^Z` and the rest |
 
-Every other `⌘` combo belongs to Eaon ADE, not the shell.
+Control is the shell's, always. Command is the app's, apart from the handful
+above that a terminal is expected to own.
+
+The macOS editing keys are sent as readline control codes (`^A`, `^E`, `^U`) and
+meta-letters (`ESC b`, `ESC f`) rather than the modified-arrow escapes xterm
+emits by default, because those are the ones bound everywhere — in bash,
+`ESC[1;3D` is not merely ignored, the tail of it lands on the line as text.
 
 `⇧Return` is the binding Claude Code's `/terminal-setup` installs by hand in
 iTerm2 and VS Code. Eaon ADE sends it natively, so there is nothing to set up —
@@ -221,12 +298,15 @@ src/
     stt/models.ts      Speech model catalogue on disk: download, verify, delete
     stt/host.ts        Owns the transcriber process and keeps one model warm
     stt/child.ts       The transcriber itself, in its own process
+    speech.ts          Spoken alerts: reads the system voices, queues what is said
   preload/     The one typed bridge the renderer is allowed to use
   shared/      Types both sides agree on
     stt.ts             Model catalogue and the exact file manifest behind it
+    speech.ts          Voice quality, ranking, and the line a finished pane says
   renderer/    React UI
     lib/terminals.ts   Owns every xterm instance; terminals outlive their components
     lib/dictation.ts   Microphone capture and voice-activity segmentation
+    lib/speech.ts      Decides whether a finished run is worth announcing
     lib/insert.ts      Decides where dictated text lands
     store/useStore.ts  Application state, persisted to disk on a debounce
     components/        Screens and panels
@@ -288,6 +368,19 @@ shell, anything you genuinely set in your own profile comes straight back.
 - **Speech models are a download, not a bundle.** Dictation does nothing until
   you have chosen one — the first press sends you to Settings rather than
   guessing on your behalf and spending 42 MB of someone's tethered connection.
+- **Spoken alerts sound as good as your Mac's voices, and no better.** The
+  synthesiser is the operating system's, which is what keeps the feature to one
+  short-lived process instead of a neural model resident in memory — but a stock
+  Mac ships only Apple's compact voices, and they sound synthetic. The natural
+  ones are free, and Apple offers them through System Settings alone; the panel
+  detects when you have none and links straight there. Bundling a voice would
+  cost a several-hundred-megabyte download and a second inference engine, for
+  three words.
+- **A finished run is inferred from timing, not from the agent.** Nothing tells
+  Eaon ADE that a turn is over, so it measures how long a pane kept printing
+  after you stopped typing. Agents that animate a status line — which is all of
+  the ones in the picker — are read accurately. One that thinks in complete
+  silence and then prints a single line would not be announced.
 - **The Fn / 🌐 key cannot be the push-to-talk key.** macOS never delivers it to
   an application: Chromium's macOS event conversion translates `flagsChanged`
   only for Shift, Control, Option, Command and Caps Lock, so no key event is
@@ -303,3 +396,7 @@ is offline by construction — the transcriber loads models `local_files_only`
 with remote loading switched off, so it cannot reach the network. Audio is held
 in memory, transcribed locally, and dropped; it is never written to disk. The
 microphone is open only while you are dictating.
+
+Spoken alerts are local for the same reason in the other direction: the line is
+rendered by macOS's own synthesiser on this machine. No text is sent to a speech
+service, and nothing about which pane finished, or when, leaves the computer.

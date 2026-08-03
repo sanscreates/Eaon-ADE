@@ -4,6 +4,7 @@ import {
   DEFAULT_SETTINGS,
   HUES,
   NAME_POOL,
+  agentKeepsSessions,
   type AgentDef,
   type BoardCard,
   type PaneSpec,
@@ -14,15 +15,21 @@ import {
   type ResumableSession,
   type Settings,
   type SurfaceId,
+  type WorkspaceKind,
   type VaultNote,
-  type Workspace
+  type Workspace,
+  PANEL_LABEL
 } from '@shared/types'
 import type { DownloadProgress, InstalledModel, SttEngineState } from '@shared/stt'
 import { IDLE_UPDATE_STATE, type UpdateState } from '@shared/update'
 import { terminals } from '../lib/terminals'
+import { forgetPane } from '../lib/speech'
 import { basename, uid } from '../lib/util'
 
 export type DockTab = 'browser' | 'editor' | 'git' | 'tools'
+
+/** The workspace kinds that hold a surface rather than shells. */
+export type PanelKind = Exclude<WorkspaceKind, 'terminals'>
 
 export interface Notice {
   id: string
@@ -59,7 +66,6 @@ interface AppState {
   vault: VaultNote[]
   dismissedResume: string[]
 
-  surface: SurfaceId
   wizard: WizardDraft | null
   railOpen: boolean
   dockOpen: boolean
@@ -70,6 +76,8 @@ interface AppState {
   settingsOpen: boolean
   resumeOpen: boolean
   presetEditorId: string | null | 'new'
+  /** Pane asked to open its find box, cleared once that pane has taken it. */
+  findPaneId: string | null
   notices: Notice[]
 
   /** Speech models present on this machine. */
@@ -120,7 +128,7 @@ interface AppState {
   touchRecent: (path: string) => void
 
   updateSettings: (patch: Partial<Settings>) => void
-  setSurface: (s: SurfaceId) => void
+  openPanel: (kind: PanelKind) => void
   toggleRail: () => void
   toggleDock: (tab?: DockTab) => void
   setDockTab: (tab: DockTab) => void
@@ -130,6 +138,7 @@ interface AppState {
   setSettingsOpen: (open: boolean) => void
   setResumeOpen: (open: boolean) => void
   setPresetEditor: (id: string | null | 'new') => void
+  setFindPane: (id: string | null) => void
 
   notify: (n: Omit<Notice, 'id' | 'at'>) => void
   dismissNotice: (id: string) => void
@@ -165,6 +174,10 @@ function makePane(name: string, cwd: string, agentId: string): PaneSpec {
     cwd,
     agentId,
     command,
+    // Named now, before the agent has run once. The main process pins this id
+    // on the first launch and reopens it on every one after, which is what
+    // makes a pane come back as the conversation it was rather than a new one.
+    sessionId: agentKeepsSessions(agentId) ? crypto.randomUUID() : null,
     status: 'idle',
     branch: null,
     contextPct: null,
@@ -203,7 +216,6 @@ export const useStore = create<AppState>((set, get) => ({
   vault: [],
   dismissedResume: [],
 
-  surface: 'grid',
   wizard: null,
   railOpen: true,
   dockOpen: false,
@@ -216,6 +228,7 @@ export const useStore = create<AppState>((set, get) => ({
   settingsOpen: false,
   resumeOpen: false,
   presetEditorId: null,
+  findPaneId: null,
   notices: [],
 
   sttInstalled: [],
@@ -252,8 +265,24 @@ export const useStore = create<AppState>((set, get) => ({
     // Panes are restored as empty shells; their processes died with the app.
     const workspaces = (saved.workspaces ?? []).map((w) => ({
       ...w,
+      // Saved before workspaces had kinds: everything back then held shells.
+      kind: w.kind ?? ('terminals' as const),
       zoomedPaneId: null,
-      panes: w.panes.map((p) => ({ ...p, status: 'idle' as PaneStatus, contextPct: null, title: null }))
+      panes: w.panes.map((p) => ({
+        ...p,
+        status: 'idle' as PaneStatus,
+        contextPct: null,
+        title: null,
+        /*
+         * Panes saved before this existed are given an id now rather than
+         * having one guessed for them. Their previous conversation was never
+         * named, and picking the most recent transcript in the folder would be
+         * a coin toss the moment two panes share one — a pane silently
+         * adopting somebody else's conversation is far worse than starting
+         * clean. From this launch on, each one keeps what it is given.
+         */
+        sessionId: p.sessionId ?? (agentKeepsSessions(p.agentId) ? crypto.randomUUID() : null)
+      }))
     }))
 
     set({
@@ -363,6 +392,7 @@ export const useStore = create<AppState>((set, get) => ({
       id: uid('w_'),
       name: basename(draft.cwd) || 'Workspace',
       cwd: draft.cwd,
+      kind: 'terminals',
       hue: nextHue(s.workspaces),
       layout: draft.layout,
       panes: names.map((n) => makePane(n, draft.cwd, draft.agentId)),
@@ -378,8 +408,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({
       workspaces: [...s.workspaces, workspace],
       activeWorkspaceId: workspace.id,
-      wizard: null,
-      surface: draft.mode === 'swarm' ? 'grid' : draft.mode
+      wizard: null
     })
     get().touchRecent(draft.cwd)
     get().persist()
@@ -387,14 +416,17 @@ export const useStore = create<AppState>((set, get) => ({
 
   setActiveWorkspace(id) {
     // Picking a workspace means "show me that workspace", so it leaves Settings.
-    set({ activeWorkspaceId: id, surface: 'grid', settingsOpen: false })
+    set({ activeWorkspaceId: id, settingsOpen: false })
     get().persist()
   },
 
   closeWorkspace(id) {
     const s = get()
     const target = s.workspaces.find((w) => w.id === id)
-    target?.panes.forEach((p) => terminals.dispose(p.id))
+    target?.panes.forEach((p) => {
+      terminals.dispose(p.id)
+      forgetPane(p.id)
+    })
     const rest = s.workspaces.filter((w) => w.id !== id)
     set({
       workspaces: rest,
@@ -413,6 +445,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   addPane(workspaceId, opts) {
     const s = get()
+    // The Board has no shells to add one to.
+    if (s.workspaces.find((w) => w.id === workspaceId)?.kind !== 'terminals') return
     set({
       workspaces: s.workspaces.map((w) => {
         if (w.id !== workspaceId) return w
@@ -440,6 +474,7 @@ export const useStore = create<AppState>((set, get) => ({
     })
     const workspace: Workspace = {
       id: uid('w_'),
+      kind: 'terminals',
       name: `Resumed ${basename(cwd) || 'sessions'}`,
       cwd,
       hue: nextHue(s.workspaces),
@@ -452,8 +487,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({
       workspaces: [...s.workspaces, workspace],
       activeWorkspaceId: workspace.id,
-      resumeOpen: false,
-      surface: 'grid'
+      resumeOpen: false
     })
     get().touchRecent(cwd)
     get().persist()
@@ -461,6 +495,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   closePane(workspaceId, paneId) {
     terminals.dispose(paneId)
+    forgetPane(paneId)
     const s = get()
     set({
       workspaces: s.workspaces.map((w) => {
@@ -514,7 +549,12 @@ export const useStore = create<AppState>((set, get) => ({
     get().patchPane(paneId, { status: 'idle', contextPct: null, title: null })
     // The registry does the swap: the pane component mounted once and will not
     // mount again, so it cannot re-attach the replacement terminal itself.
-    terminals.restart(paneId, pane.cwd, pane.command, get().settings)
+    terminals.restart(
+      paneId,
+      pane.cwd,
+      { command: pane.command, agentId: pane.agentId, sessionId: pane.sessionId },
+      get().settings
+    )
   },
 
   savePreset(preset) {
@@ -557,8 +597,51 @@ export const useStore = create<AppState>((set, get) => ({
     get().persist()
   },
 
-  setSurface(surface) {
-    set({ surface })
+  /**
+   * Open the Board, Vault or Brain as its own entry in the rail.
+   *
+   * There is at most one of each. Opening it again brings it forward and points
+   * it at the folder you are currently in rather than stacking up duplicates —
+   * the Board and the Vault hold the same contents whichever workspace you came
+   * from, and the Brain reads the folder it is aimed at.
+   */
+  openPanel(kind) {
+    const s = get()
+    const source = s.workspaces.find((w) => w.id === s.activeWorkspaceId) ?? null
+    const cwd = source?.cwd || s.recents[0]?.path || s.home
+    // Wearing the colour of the folder it was opened from is what makes the
+    // rail read as one project rather than a flat list.
+    const hue = source?.hue ?? nextHue(s.workspaces)
+
+    const existing = s.workspaces.find((w) => w.kind === kind)
+    if (existing) {
+      set({
+        workspaces: s.workspaces.map((w) => (w.id === existing.id ? { ...w, cwd, hue } : w)),
+        activeWorkspaceId: existing.id,
+        settingsOpen: false
+      })
+      get().persist()
+      return
+    }
+
+    const workspace: Workspace = {
+      id: uid('w_'),
+      kind,
+      name: PANEL_LABEL[kind],
+      cwd,
+      hue,
+      layout: 0,
+      panes: [],
+      activePaneId: null,
+      zoomedPaneId: null,
+      createdAt: Date.now()
+    }
+    set({
+      workspaces: [...s.workspaces, workspace],
+      activeWorkspaceId: workspace.id,
+      settingsOpen: false
+    })
+    get().persist()
   },
   toggleRail() {
     set({ railOpen: !get().railOpen })
@@ -589,6 +672,9 @@ export const useStore = create<AppState>((set, get) => ({
   },
   setPresetEditor(id) {
     set({ presetEditorId: id })
+  },
+  setFindPane(id) {
+    set({ findPaneId: id })
   },
 
   setUpdate(update) {

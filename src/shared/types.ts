@@ -4,6 +4,7 @@
  */
 
 import { DEFAULT_THEME_ID } from './themes'
+import { DEFAULT_SEARCH_ENGINE } from './browser'
 
 export type PaneStatus = 'live' | 'idle' | 'attention' | 'exited'
 
@@ -36,11 +37,45 @@ export interface PaneSpec {
   branch: string | null
   /** Context percentage parsed out of the agent's own status line. */
   contextPct: number | null
+  /**
+   * The conversation this pane owns.
+   *
+   * Chosen by us before the agent starts rather than read back afterwards, so
+   * a pane and its conversation are bound together from the first moment and
+   * stay bound across a restart. Null for a bare shell, or for a pane restored
+   * from a command that already names its own session.
+   */
+  sessionId: string | null
   createdAt: number
+}
+
+/**
+ * What a workspace holds.
+ *
+ * Terminal workspaces own panes. The rest own a single surface and no shells —
+ * they sit in the same rail so that opening the board is switching to something
+ * rather than covering over what you were doing.
+ */
+export type WorkspaceKind = 'terminals' | 'board' | 'vault' | 'brain' | 'stats'
+
+/** Kinds that hold a surface instead of shells. */
+export const PANEL_KINDS = ['board', 'vault', 'brain', 'stats'] as const
+
+export const PANEL_LABEL: Record<(typeof PANEL_KINDS)[number], string> = {
+  board: 'Board',
+  vault: 'Vault',
+  brain: 'Brain',
+  stats: 'Stats'
+}
+
+export function isPanelKind(kind: WorkspaceKind): kind is (typeof PANEL_KINDS)[number] {
+  return kind !== 'terminals'
 }
 
 export interface Workspace {
   id: string
+  /** Absent on anything saved before workspaces had kinds; read as 'terminals'. */
+  kind: WorkspaceKind
   name: string
   cwd: string
   hue: string
@@ -104,9 +139,44 @@ export interface Settings {
    */
   voiceHoldKey: string
 
+  // ---- spoken alerts -----------------------------------------------------
+  /**
+   * Say "<pane> has finished" out loud when an agent stops working.
+   *
+   * Off until you ask for it. A tool that starts talking to you the first time
+   * you open it has made a decision that was yours to make.
+   */
+  speakOnFinish: boolean
+  /** System voice name, or '' to use the best one installed. */
+  speakVoice: string
+  /** Words per minute handed to the synthesiser. */
+  speakRate: number
+  /** 0 to 1. */
+  speakVolume: number
+  /** Only speak when the pane that finished is not the one you are watching. */
+  speakOnlyWhenAway: boolean
+
   // ---- preview browser ---------------------------------------------------
   /** Address the preview panel opens at, and the last one you visited. */
   browserHome: string
+  /** SEARCH_ENGINES id used when the address bar is given words, not an address. */
+  browserSearchEngine: string
+  /** Page zoom, as a multiplier. Kept so it survives a restart, as a browser's does. */
+  browserZoom: number
+
+  // ---- plan usage --------------------------------------------------------
+  /**
+   * Ask Anthropic for the real percentages instead of reading the transcripts.
+   *
+   * Off by default, and deliberately: turning it on lets the app read the OAuth
+   * token out of Claude Code's credentials and make a request as you. The local
+   * reading needs neither and is what runs until you say otherwise.
+   */
+  usageFromAnthropic: boolean
+  /** Billed tokens the 5-hour window is measured against. 0 uses the plan default. */
+  usageSessionLimit: number
+  /** Billed tokens the 7-day window is measured against. 0 uses the plan default. */
+  usageWeekLimit: number
 }
 
 export interface BoardCard {
@@ -176,6 +246,27 @@ export interface SpawnRequest {
   shell?: string
   /** Command typed into the fresh shell, e.g. "claude". */
   command?: string | null
+  /** Which agent this is, so the session flags can be chosen for it. */
+  agentId?: string
+  /** Conversation to pin or reopen. The main process decides which. */
+  sessionId?: string | null
+}
+
+/**
+ * Agents that let a conversation be named up front.
+ *
+ * `pin` starts a new conversation under an id we chose; `resume` reopens it.
+ * Naming it in advance is what makes reopening exact — the alternative is
+ * guessing from timestamps, which falls apart the moment two panes share a
+ * folder. Anything absent from here simply starts fresh, as it always did.
+ */
+export const SESSION_FLAGS: Record<string, { pin: string; resume: string }> = {
+  claude: { pin: '--session-id', resume: '--resume' }
+}
+
+/** True when a pane running this agent should be given a conversation id. */
+export function agentKeepsSessions(agentId: string): boolean {
+  return agentId in SESSION_FLAGS
 }
 
 export const LAYOUTS = [1, 2, 4, 6, 8, 10, 12] as const
@@ -243,5 +334,17 @@ export const DEFAULT_SETTINGS: Settings = {
   voiceSilenceMs: 1500,
   voiceHoldKey: 'MetaRight',
 
-  browserHome: 'http://localhost:5173'
+  speakOnFinish: false,
+  speakVoice: '',
+  speakRate: 180,
+  speakVolume: 0.75,
+  speakOnlyWhenAway: false,
+
+  browserHome: 'http://localhost:5173',
+  browserSearchEngine: DEFAULT_SEARCH_ENGINE,
+  browserZoom: 1,
+
+  usageFromAnthropic: false,
+  usageSessionLimit: 0,
+  usageWeekLimit: 0
 }

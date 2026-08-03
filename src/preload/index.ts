@@ -1,13 +1,15 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   DownloadProgress,
   InstalledModel,
   SttEngineState,
   SttModelDef
 } from '../shared/stt'
+import type { SpeechSupport, SystemVoice } from '../shared/speech'
 import type { UpdateState } from '../shared/update'
-import type { BrainGraph, BrainStats, Memory, MemoryMeta, SearchHit } from '../shared/brain'
+import type { UsageReport } from '../shared/usage'
 import type { Stats } from '../shared/stats'
+import type { BrainGraph, BrainStats, Memory, MemoryMeta, SearchHit } from '../shared/brain'
 import type {
   AgentDef,
   DirEntry,
@@ -77,7 +79,26 @@ const api = {
       ipcRenderer.invoke('fs:search', root, q),
     isDir: (target: string): Promise<boolean> => ipcRenderer.invoke('fs:isDir', target),
     pickFolder: (startIn?: string): Promise<string | null> =>
-      ipcRenderer.invoke('dialog:pickFolder', startIn)
+      ipcRenderer.invoke('dialog:pickFolder', startIn),
+
+    /**
+     * Where a dragged file actually lives.
+     *
+     * `File.path` was removed in Electron 32; this is the replacement, and it
+     * only answers for files that came from a real drag or a file picker.
+     * Anything synthesised in the page has no path and returns an empty string.
+     */
+    pathForDropped: (file: File): string => {
+      try {
+        return webUtils.getPathForFile(file)
+      } catch {
+        return ''
+      }
+    },
+
+    /** Write a dropped payload that had no path of its own, and name it. */
+    saveDropped: (name: string, bytes: Uint8Array): Promise<string> =>
+      ipcRenderer.invoke('fs:saveDropped', name, bytes)
   },
 
   git: {
@@ -103,9 +124,33 @@ const api = {
     countFor: (cwd: string): Promise<number> => ipcRenderer.invoke('sessions:countFor', cwd)
   },
 
+  /** Streak, contribution grid and code totals. Null folder counts everything. */
+  stats: {
+    get: (folder: string | null): Promise<Stats> => ipcRenderer.invoke('stats:get', folder)
+  },
+
+  /** How much of the Claude plan has been spent. Read on disk unless told otherwise. */
+  usage: {
+    read: (opts: { fromAnthropic: boolean; session: number; week: number }): Promise<UsageReport> =>
+      ipcRenderer.invoke('usage:read', opts),
+    forget: (): void => ipcRenderer.send('usage:forget')
+  },
+
   browser: {
     /** Loopback ports with something listening, for the preview panel's chips. */
-    devPorts: (): Promise<number[]> => ipcRenderer.invoke('browser:devPorts')
+    devPorts: (): Promise<number[]> => ipcRenderer.invoke('browser:devPorts'),
+    /**
+     * Shortcuts pressed while the page itself had focus.
+     *
+     * Keys inside a <webview> go to the guest's own process and never reach
+     * this window, so the main process catches the browser chords before the
+     * guest sees them and sends them back here.
+     */
+    onKey: (cb: (chord: string) => void): (() => void) => {
+      const handler = (_e: unknown, chord: string): void => cb(chord)
+      ipcRenderer.on('browser:key', handler)
+      return () => ipcRenderer.removeListener('browser:key', handler)
+    }
   },
 
   /**
@@ -123,11 +168,6 @@ const api = {
     cancel: (modelId: string): void => ipcRenderer.send('stt:cancel', modelId),
     remove: (modelId: string): Promise<InstalledModel[]> =>
       ipcRenderer.invoke('stt:remove', modelId),
-  /** Streak, contribution grid and code totals. Null folder counts everything. */
-  stats: {
-    get: (folder: string | null): Promise<Stats> => ipcRenderer.invoke('stats:get', folder)
-  },
-
 
     load: (modelId: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('stt:load', modelId),
@@ -150,6 +190,20 @@ const api = {
       ipcRenderer.on('stt:state', handler)
       return () => ipcRenderer.removeListener('stt:state', handler)
     }
+  },
+
+  /**
+   * Spoken alerts. The synthesiser belongs to the operating system, so the
+   * renderer hands over a line of text and nothing else.
+   */
+  speech: {
+    support: (): Promise<SpeechSupport> => ipcRenderer.invoke('speech:support'),
+    voices: (): Promise<SystemVoice[]> => ipcRenderer.invoke('speech:voices'),
+    refresh: (): Promise<SystemVoice[]> => ipcRenderer.invoke('speech:refresh'),
+    speak: (text: string, opts: { voice?: string; rate?: number; volume?: number }): void =>
+      ipcRenderer.send('speech:speak', text, opts),
+    stop: (): void => ipcRenderer.send('speech:stop'),
+    openVoiceSettings: (): void => ipcRenderer.send('speech:openVoiceSettings')
   },
 
   /**

@@ -16,11 +16,14 @@ import {
   Search,
   Settings2,
   Terminal,
+  Volume2,
+  VolumeX,
   Wrench,
   X
 } from 'lucide-react'
 import { useStore } from '../store/useStore'
 import { terminals } from '../lib/terminals'
+import { hushSpeech } from '../lib/speech'
 import { MOD, fuzzy } from '../lib/util'
 
 interface Action {
@@ -66,27 +69,30 @@ export function CommandPalette(): React.JSX.Element | null {
       },
       {
         id: 'board',
-        label: 'Go to Board',
+        label: 'Open the Board',
         icon: LayoutList,
-        run: () => store.setSurface('board')
+        run: () => store.openPanel('board')
       },
       {
         id: 'brain',
-        label: 'Go to Brain — what this project knows',
+        label: 'Open the Brain — what this project knows',
         icon: NotebookPen,
-        run: () => store.setSurface('brain')
+        run: () => store.openPanel('brain')
       },
       {
         id: 'vault',
-        label: 'Go to Vault',
+        label: 'Open the Vault',
         icon: NotebookPen,
-        run: () => store.setSurface('vault')
+        run: () => store.openPanel('vault')
       },
       {
         id: 'grid',
-        label: 'Go to Grid',
+        label: 'Back to the terminals',
         icon: Terminal,
-        run: () => store.setSurface('grid')
+        run: () => {
+          const shells = store.workspaces.find((w) => w.kind === 'terminals')
+          if (shells) store.setActiveWorkspace(shells.id)
+        }
       },
       {
         id: 'conductor',
@@ -125,6 +131,19 @@ export function CommandPalette(): React.JSX.Element | null {
         label: store.dockOpen ? 'Hide the side panel' : 'Show the side panel',
         icon: PanelRight,
         run: () => store.toggleDock()
+      },
+      {
+        id: 'speak',
+        label: store.settings.speakOnFinish
+          ? 'Stop saying when an agent finishes'
+          : 'Say out loud when an agent finishes',
+        icon: store.settings.speakOnFinish ? VolumeX : Volume2,
+        run: () => {
+          const on = !store.settings.speakOnFinish
+          store.updateSettings({ speakOnFinish: on })
+          // Turning it off mid-sentence should stop the sentence.
+          if (!on) hushSpeech()
+        }
       },
       {
         id: 'settings',

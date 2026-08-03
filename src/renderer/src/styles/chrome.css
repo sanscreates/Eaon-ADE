@@ -327,3 +327,111 @@
 .dock-resizer[data-dragging='true'] {
   background: var(--accent-edge);
 }
+
+/* ---- rail: panels alongside workspaces ---------------------------------- *
+ *
+ * Board, Vault and Brain live in the same list as the terminal workspaces,
+ * because that is what they are now — somewhere you switch to, not a screen
+ * that covers the one you were on. They are set apart by a heading and a
+ * second line naming the project they are pointed at, so the list never
+ * suggests a panel is holding shells.
+ */
+
+.rail-empty {
+  padding: 10px 10px 0;
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+}
+
+.rail-group {
+  display: flex;
+  align-items: center;
+  padding: 14px 10px 6px;
+}
+/* No heading above the first thing in the list; it would be a label for
+   nothing when every workspace has been closed. */
+.rail-group:first-child {
+  padding-top: 4px;
+}
+
+.ws-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+}
+.ws-label .ws-name {
+  flex: 0 0 auto;
+}
+
+.ws-where {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ws-item[data-panel='true'] {
+  height: 44px;
+}
+
+/* Panel rows carry the folder's colour as a wash rather than a bar, so a
+   glance separates "a project" from "a view onto one". */
+.ws-item[data-panel='true'] .ws-glyph {
+  background: color-mix(in srgb, var(--hue, var(--accent)) 14%, transparent);
+  border-radius: 6px;
+  width: 22px;
+  height: 22px;
+}
+
+/*
+ * Two columns, not one row.
+ *
+ * A row sized these to fit whatever was left of a 236px rail, which worked for
+ * three and clipped the fourth the moment Stats joined them. A fixed pair of
+ * columns cannot overflow however many panels exist, and it stays tidy as they
+ * are opened and the row shrinks: four reads as a block, three as a block with
+ * one below, two as a pair.
+ */
+.rail-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line-100);
+}
+/* On its own it should look like a button, not half of a missing pair. */
+.rail-panels:has(> :only-child) {
+  grid-template-columns: 1fr;
+}
+
+.rail-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  justify-content: center;
+  height: 27px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-200);
+  background: var(--ink-100);
+  color: var(--text-lo);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+  transition:
+    color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+.rail-chip:hover {
+  color: var(--text-hi);
+  border-color: var(--line-300);
+  background: var(--ink-200);
+}

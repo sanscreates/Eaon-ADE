@@ -12,11 +12,36 @@ import './styles/update.css'
 import './styles/brain.css'
 import './styles/stats.css'
 import './styles/browser.css'
+import './styles/usage.css'
 import { App } from './App'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 const root = document.getElementById('root')
 if (!root) throw new Error('Missing #root')
 
+// Neither of these reaches the error boundary — a boundary only sees what
+// throws during React's own work — so they are logged here or not at all.
+window.addEventListener('error', (e) => {
+  console.error('[eaon] uncaught error:', e.error ?? e.message)
+})
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[eaon] unhandled rejection:', e.reason)
+})
+
+/*
+ * A file dropped anywhere the app does not handle it would otherwise be opened
+ * by Chromium — which, in a window that is the whole application, means the UI
+ * is replaced by the contents of that file and there is no way back. Panes call
+ * preventDefault themselves and these never see the event; this is only the
+ * backstop for everything that misses one.
+ */
+window.addEventListener('dragover', (e) => e.preventDefault())
+window.addEventListener('drop', (e) => e.preventDefault())
+
 // No StrictMode: terminals are imperative, long-lived DOM. Double-mounting
 // them in development costs more than it catches.
-createRoot(root).render(<App />)
+createRoot(root).render(
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
+)

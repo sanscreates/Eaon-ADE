@@ -7,10 +7,12 @@ import { PtyManager } from './pty-manager'
 import { Store } from './store'
 import * as fsapi from './fsapi'
 import * as git from './git'
-import { listResumable, sessionCountFor } from './sessions'
+import { launchCommand, listResumable, sessionCountFor } from './sessions'
 import { collectStats } from './stats'
+import { anthropicUsage, localUsage, resetUsageCache } from './usage'
 import * as browser from './browser'
 import * as models from './stt/models'
+import * as speech from './speech'
 import { SttHost } from './stt/host'
 import { Updater } from './updater'
 import { BrainStore } from './brain/store'
@@ -45,6 +47,26 @@ app.setPath('userData', path.join(app.getPath('appData'), APP_NAME))
 // contexts at 16 and silently drops the oldest past that, which would blank a
 // pane in a twelve-up grid.
 app.commandLine.appendSwitch('max-active-webgl-contexts', '32')
+
+/**
+ * Chords the preview panel owns, by the key that produces them.
+ *
+ * Only these are taken from a page. Everything else a web app binds to the
+ * Command key — and editors on the web bind a great many — is left alone.
+ */
+const BROWSER_CHORDS: Record<string, string> = {
+  l: 'address',
+  r: 'reload',
+  f: 'find',
+  '[': 'back',
+  ']': 'forward',
+  arrowleft: 'back',
+  arrowright: 'forward',
+  '=': 'zoom-in',
+  '+': 'zoom-in',
+  '-': 'zoom-out',
+  '0': 'zoom-reset'
+}
 
 function createWindow(): BrowserWindow {
   // Paint the window in the saved theme's backdrop so a cold start does not
@@ -94,12 +116,41 @@ function createWindow(): BrowserWindow {
     params.allowpopups = 'false'
   })
 
-  // A page that wants a new window gets the user's real browser, not a second
-  // preview with no address bar and no way out.
   win.webContents.on('did-attach-webview', (_e, guest) => {
+    /*
+     * A link asking for a new window gets this one.
+     *
+     * Sending them to the user's real browser used to be the only sensible
+     * answer, because the panel had no address bar and no history — a page
+     * opened there would have been a dead end. It has both now, so opening in
+     * place is both what a browser does and what keeps you inside the preview
+     * you were testing.
+     */
     guest.setWindowOpenHandler(({ url }) => {
-      if (/^https?:\/\//i.test(url)) shell.openExternal(url)
+      if (/^https?:\/\//i.test(url)) void guest.loadURL(url).catch(() => undefined)
       return { action: 'deny' }
+    })
+
+    /*
+     * Browser shortcuts pressed while the page has focus.
+     *
+     * Keystrokes inside a <webview> are delivered to the guest's own process
+     * and never reach our renderer, so ⌘L would open the address bar right up
+     * until you clicked the page and then silently stop. Catching them here,
+     * before the guest sees them, is the only place that works.
+     */
+    guest.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return
+      const mod = process.platform === 'darwin' ? input.meta : input.control
+      if (!mod || input.alt) return
+
+      const key = input.key.toLowerCase()
+      const chord = BROWSER_CHORDS[key]
+      if (!chord) return
+
+      event.preventDefault()
+      const wc = win.webContents
+      if (!wc.isDestroyed()) wc.send('browser:key', input.shift ? `${chord}+shift` : chord)
     })
   })
 
@@ -117,6 +168,44 @@ function createWindow(): BrowserWindow {
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null
   })
+
+  /*
+   * A renderer that dies takes the entire UI with it and leaves the window
+   * painted in the theme's backdrop — a black rectangle over the whole app,
+   * with no way back short of quitting. Electron does nothing about this on its
+   * own, so bring the window back rather than leaving somebody staring at it.
+   *
+   * The shells go first: their panes no longer exist as far as the new renderer
+   * is concerned, and it will ask for fresh ones by the same pane ids.
+   */
+  let recoveries = 0
+  win.webContents.on('render-process-gone', (_e, details) => {
+    console.error(`[eaon] renderer gone: ${details.reason} (exit ${details.exitCode})`)
+    if (details.reason === 'clean-exit' || win.isDestroyed()) return
+
+    recoveries += 1
+    if (recoveries > 3) {
+      dialog.showErrorBox(
+        'Eaon ADE stopped responding',
+        'The window crashed repeatedly and could not be recovered. Quit and open it again.'
+      )
+      return
+    }
+
+    ptys.killAll()
+    setTimeout(() => {
+      if (win.isDestroyed()) return
+      ptys.unmute()
+      win.reload()
+    }, 300 * recoveries)
+  })
+
+  // Long enough to be reported, but a busy repaint across a dozen panes can
+  // look like this too, so it is worth a line in the log and nothing more.
+  win.webContents.on('unresponsive', () => console.error('[eaon] renderer unresponsive'))
+  win.webContents.on('responsive', () => console.error('[eaon] renderer responsive again'))
+
+  ptys.unmute()
 
   // Anything that wants a new window opens in the user's browser instead.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -155,7 +244,11 @@ async function which(bin: string): Promise<string | null> {
 
 function registerIpc(): void {
   // ---- terminals -------------------------------------------------------
-  ipcMain.handle('pty:spawn', (_e, req: SpawnRequest) => ptys.spawn(req))
+  ipcMain.handle('pty:spawn', (_e, req: SpawnRequest) =>
+    // The session flags are decided here, where the transcripts are, rather
+    // than in the renderer where they would only be a guess.
+    ptys.spawn({ ...req, command: launchCommand(req) })
+  )
   ipcMain.on('pty:write', (_e, paneId: string, data: string) => ptys.write(paneId, data))
   ipcMain.on('pty:resize', (_e, paneId: string, cols: number, rows: number) =>
     ptys.resize(paneId, cols, rows)
@@ -175,6 +268,9 @@ function registerIpc(): void {
   ipcMain.handle('fs:write', (_e, file: string, text: string) => fsapi.writeFile(file, text))
   ipcMain.handle('fs:search', (_e, root: string, q: string) => fsapi.searchFiles(root, q))
   ipcMain.handle('fs:isDir', (_e, target: string) => fsapi.isDirectory(target))
+  ipcMain.handle('fs:saveDropped', (_e, name: string, bytes: Uint8Array) =>
+    fsapi.saveDropped(name, bytes)
+  )
 
   ipcMain.handle('dialog:pickFolder', async (_e, startIn?: string) => {
     if (!mainWindow) return null
@@ -210,6 +306,22 @@ function registerIpc(): void {
   })
   ipcMain.handle('sessions:resumable', () => listResumable())
   ipcMain.handle('sessions:countFor', (_e, cwd: string) => sessionCountFor(cwd))
+
+  // Stats: null counts every folder you have worked in.
+  ipcMain.handle('stats:get', (_e, folder: string | null) => collectStats(folder))
+
+  // ---- plan usage ------------------------------------------------------
+  ipcMain.handle(
+    'usage:read',
+    (_e, opts: { fromAnthropic?: boolean; session?: number; week?: number }) => {
+      const limits = {
+        ...(opts?.session ? { session: opts.session } : {}),
+        ...(opts?.week ? { week: opts.week } : {})
+      }
+      return opts?.fromAnthropic ? anthropicUsage() : localUsage(limits)
+    }
+  )
+  ipcMain.on('usage:forget', () => resetUsageCache())
 
   // ---- preview browser -------------------------------------------------
   ipcMain.handle('browser:devPorts', () => browser.devPorts())
@@ -261,6 +373,24 @@ function registerIpc(): void {
   )
   ipcMain.on('stt:stop', () => stt.stop())
 
+  // ---- spoken alerts ---------------------------------------------------
+  ipcMain.handle('speech:support', () => speech.support())
+  ipcMain.handle('speech:voices', () => speech.voices())
+  ipcMain.handle('speech:refresh', () => {
+    // Called when the settings panel is reopened, so a voice downloaded from
+    // System Settings a moment ago turns up without restarting the app.
+    speech.refreshVoices()
+    return speech.voices()
+  })
+  ipcMain.on(
+    'speech:speak',
+    (_e, text: string, opts: { voice?: string; rate?: number; volume?: number }) => {
+      speech.speak(text, opts ?? {})
+    }
+  )
+  ipcMain.on('speech:stop', () => speech.stop())
+  ipcMain.on('speech:openVoiceSettings', () => speech.openVoiceSettings())
+
   // ---- project memory --------------------------------------------------
   ipcMain.handle('brain:open', (_e, cwd: string | null) => {
     brain.setWorkspace(cwd)
@@ -302,9 +432,6 @@ function registerIpc(): void {
 
   // ---- window ----------------------------------------------------------
   ipcMain.on('win:minimize', () => mainWindow?.minimize())
-  // Stats: null counts every folder you have worked in.
-  ipcMain.handle('stats:get', (_e, folder: string | null) => collectStats(folder))
-
   ipcMain.on('win:toggleMaximize', () => {
     if (!mainWindow) return
     mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize()
@@ -367,22 +494,77 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', () => {
-  updater.dispose()
-  ptys.killAll()
-  stt.stop()
-  store?.flush()
+// The GPU process taking every WebGL context down with it is survivable — each
+// terminal falls back to its DOM renderer — but it is worth knowing about when
+// somebody reports that panes went slow.
+app.on('child-process-gone', (_e, details) => {
+  if (details.reason === 'clean-exit') return
+  console.error(`[eaon] ${details.type} process gone: ${details.reason}`)
 })
 
-// Shut down cleanly when something outside the app asks us to stop, so the
-// PTY threads are gone before the process starts tearing itself down.
-for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
-  process.on(signal, () => {
-    ptys.killAll()
+let quitting = false
+
+/**
+ * Stops everything the app owns, then leaves without unwinding Node.
+ *
+ * The order matters. `ptys.shutdown()` waits for every shell to be reaped
+ * while the JavaScript environment is still intact, because node-pty reports
+ * exits through a thread-safe function and one arriving mid-teardown aborts
+ * the process outright — the SIGABRT this app used to die with. Once they are
+ * gone there is nothing left worth unwinding, so exit rather than hand control
+ * back and give a straggler another chance to land at the wrong moment.
+ */
+async function shutdownAndExit(): Promise<void> {
+  if (quitting) return
+  quitting = true
+
+  // Nothing below may hang the quit. If it does, leave anyway.
+  const failsafe = setTimeout(() => app.exit(0), 5000)
+  failsafe.unref()
+
+  try {
+    updater.dispose()
+  } catch {
+    /* nothing here is worth blocking a quit */
+  }
+  try {
     stt.stop()
+  } catch {
+    /* nothing here is worth blocking a quit */
+  }
+  try {
+    // Nobody wants the app to carry on talking after they have closed it.
+    speech.stop()
+  } catch {
+    /* nothing here is worth blocking a quit */
+  }
+  try {
     store?.flush()
-    app.quit()
-  })
+  } catch {
+    /* nothing here is worth blocking a quit */
+  }
+  try {
+    await ptys.shutdown()
+  } catch {
+    /* nothing here is worth blocking a quit */
+  }
+
+  clearTimeout(failsafe)
+  app.exit(0)
+}
+
+app.on('before-quit', (e) => {
+  if (quitting) return
+  // Held open only long enough to reap the shells; `shutdownAndExit` bounds
+  // itself and then exits on its own.
+  e.preventDefault()
+  void shutdownAndExit()
+})
+
+// Shut down the same way when something outside the app asks us to stop, so
+// the PTY threads are gone before the process starts tearing itself down.
+for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
+  process.on(signal, () => void shutdownAndExit())
 }
 
 // A stray rejection in a filesystem or git call must never surface as a crash

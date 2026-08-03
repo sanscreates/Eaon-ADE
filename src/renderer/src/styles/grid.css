@@ -428,3 +428,24 @@
   background: var(--ink-300);
   box-shadow: var(--shadow-md);
 }
+
+/* ---- dropping a file onto a pane ---------------------------------------- *
+ *
+ * The whole pane lights rather than a strip or a badge: the question a drag
+ * asks is "which of these twelve gets it?", and only the outline of the target
+ * answers that from the corner of your eye.
+ */
+.pane[data-dropping='true']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  border-radius: inherit;
+  border: 1.5px dashed var(--accent-edge);
+  background: var(--accent-wash);
+}
+
+.pane[data-dropping='true'] .pane-head {
+  color: var(--accent);
+}

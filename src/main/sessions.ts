@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises'
-import { createReadStream } from 'node:fs'
+import { createReadStream, statSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import type { ResumableSession } from '../shared/types'
+import { SESSION_FLAGS, type ResumableSession } from '../shared/types'
 
 /** Reads the first `bytes` of a file without pulling the whole thing into memory. */
 async function readHead(file: string, bytes = 8192): Promise<string> {
@@ -208,4 +208,59 @@ export async function sessionCountFor(cwd: string): Promise<number> {
   } catch {
     return 0
   }
+}
+
+/**
+ * Whether a conversation has actually been recorded yet.
+ *
+ * Starting an agent and never speaking to it leaves no transcript at all —
+ * measured, not assumed — so a pane can hold a session id that names nothing.
+ * Asking the disk first is what keeps a restart from trying to reopen a
+ * conversation that was never had, which the agent would refuse.
+ */
+export function hasTranscript(cwd: string, sessionId: string): boolean {
+  if (!cwd || !sessionId) return false
+  // A session id is ours, but it still ends up in a path, so it is checked.
+  if (!/^[0-9a-fA-F-]{36}$/.test(sessionId)) return false
+  const file = path.join(
+    os.homedir(),
+    '.claude',
+    'projects',
+    projectSlug(cwd),
+    `${sessionId}.jsonl`
+  )
+  try {
+    return statSync(file).size > 0
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The command a pane should actually run.
+ *
+ * Same pane, same conversation, whether this is the first launch or the tenth:
+ * the id is pinned when there is nothing to reopen and resumed once there is.
+ * Deciding it here, at the moment of spawning, means the answer is always taken
+ * from what is on disk right now rather than from something written down
+ * earlier that may since have stopped being true.
+ */
+export function launchCommand(req: {
+  command?: string | null
+  agentId?: string
+  sessionId?: string | null
+  cwd: string
+}): string | null {
+  const { command, agentId, sessionId, cwd } = req
+  if (!command || !agentId || !sessionId) return command ?? null
+
+  const flags = SESSION_FLAGS[agentId]
+  if (!flags) return command
+
+  // A command that already names a session — one resumed by hand from the
+  // picker, say — is left exactly as the caller wrote it.
+  if (/(^|\s)--(resume|session-id|continue)(\s|=|$)/.test(command)) return command
+
+  const flag = hasTranscript(cwd, sessionId) ? flags.resume : flags.pin
+  return `${command} ${flag} ${sessionId}`
 }

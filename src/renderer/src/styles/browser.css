@@ -1,4 +1,11 @@
-/* Preview browser in the side panel. */
+/*
+ * Preview browser in the side panel.
+ *
+ * Laid out the way every browser lays this out — title, then back / forward /
+ * reload / address / overflow, then the page — because that arrangement is the
+ * one nobody has to think about. The materials are Eaon's own: the app's inks,
+ * its accent, its mono face in the address bar so a URL reads as a URL.
+ */
 
 .dock-slot {
   height: 100%;
@@ -15,39 +22,212 @@
   min-height: 0;
 }
 
+/* Standing in for a tab: the one thing a tab strip would have told you. */
+.browser-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding: 7px 10px 6px;
+  color: var(--text-mid);
+  font-size: var(--fs-label);
+  line-height: 1;
+  border-bottom: 1px solid var(--line-100);
+}
+.browser-title svg {
+  flex: 0 0 auto;
+  opacity: 0.65;
+}
+.browser-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .browser-bar {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   padding: 7px 8px;
   border-bottom: 1px solid var(--line-100);
   flex: 0 0 auto;
 }
 
-.browser-address {
+/* ---- the address bar ---------------------------------------------------- */
+
+.browser-omnibox {
   flex: 1;
   min-width: 0;
-  height: 26px;
-  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 4px 0 9px;
+  margin: 0 4px;
   border-radius: 999px;
   border: 1px solid var(--line-200);
   background: var(--ink-100);
-  color: var(--text-hi);
-  font-size: var(--fs-sm);
   transition:
     border-color var(--dur) var(--ease),
-    background var(--dur) var(--ease);
+    background var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
-.browser-address:hover {
+.browser-omnibox:hover {
   border-color: var(--line-300);
+}
+.browser-omnibox[data-focused='true'] {
+  border-color: var(--accent-edge);
+  background: var(--ink-050);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+.browser-address {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: none;
+  color: var(--text-hi);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  letter-spacing: -0.01em;
 }
 .browser-address:focus {
   outline: none;
-  border-color: var(--accent-edge);
-  background: var(--ink-050);
 }
 .browser-address::placeholder {
   color: var(--text-dim);
+  font-family: var(--font-ui);
+  letter-spacing: 0;
+}
+
+/*
+ * The one indicator worth having. Loopback is a secure context to a browser
+ * and is where this panel spends nearly all its time, so it gets its own
+ * quiet mark rather than the warning a plain http site earns.
+ */
+.browser-safety {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
+/* Neutral, as a modern browser's lock is — it means "nothing to report". */
+.browser-safety[data-tone='secure'] {
+  color: var(--text-mid);
+}
+/* A dev server on this machine is the case this panel exists for, so it is the
+   one that gets the accent. */
+.browser-safety[data-tone='local'] {
+  color: var(--accent);
+}
+.browser-safety[data-tone='warn'] {
+  color: var(--danger);
+}
+
+.browser-zoom-pill {
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line-200);
+  background: var(--ink-200);
+  color: var(--text-mid);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+.browser-zoom-pill:hover {
+  color: var(--text-hi);
+  border-color: var(--line-300);
+}
+
+/* ---- overflow menu ------------------------------------------------------ */
+
+.browser-more {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.browser-menu {
+  top: 32px;
+  right: 0;
+  min-width: 232px;
+}
+
+.browser-menu-zoom {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 12px;
+  color: var(--text-mid);
+  font-size: var(--fs-sm);
+}
+.browser-menu-zoom > span:first-child {
+  flex: 1;
+}
+.browser-menu-zoom .icon-btn {
+  width: 24px;
+  height: 24px;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.browser-zoom-value {
+  min-width: 48px;
+  padding: 3px 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-hi);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  text-align: center;
+}
+.browser-zoom-value:hover {
+  background: var(--ink-300);
+}
+
+.browser-context {
+  position: absolute;
+  min-width: 208px;
+}
+
+/* ---- find in page ------------------------------------------------------- */
+
+.browser-find {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line-100);
+  background: var(--ink-100);
+  flex: 0 0 auto;
+}
+.browser-find input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line-200);
+  background: var(--ink-050);
+  color: var(--text-hi);
+  font-size: var(--fs-sm);
+}
+.browser-find input:focus {
+  outline: none;
+  border-color: var(--accent-edge);
+}
+.browser-find-count {
+  flex: 0 0 auto;
+  min-width: 42px;
+  text-align: right;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
 }
 
 /*
@@ -97,6 +277,8 @@
   background: var(--accent-wash);
 }
 
+/* ---- the page ----------------------------------------------------------- */
+
 .browser-view {
   position: relative;
   flex: 1;
@@ -108,6 +290,27 @@
 
 .browser-view webview {
   border: 0;
+}
+
+/* Where a link goes, in the corner, the way a browser does it. */
+.browser-status {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  max-width: 85%;
+  padding: 3px 9px 4px;
+  border-radius: 0 6px 0 0;
+  background: var(--ink-050);
+  border-top: 1px solid var(--line-100);
+  border-right: 1px solid var(--line-100);
+  color: var(--text-mid);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }
 
 /* An indeterminate sliver rather than a spinner — it belongs to the edge of the

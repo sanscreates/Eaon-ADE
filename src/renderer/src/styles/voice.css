@@ -359,3 +359,66 @@
   font-family: var(--font-mono);
   color: var(--text-lo);
 }
+
+/* ---- spoken alerts ------------------------------------------------------ */
+
+.slider {
+  width: 132px;
+  height: 20px;
+  appearance: none;
+  background: none;
+  cursor: pointer;
+}
+.slider::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ink-400);
+}
+.slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--accent);
+  transition: transform var(--dur) var(--ease);
+}
+.slider:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+.slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+/*
+ * The nudge towards a voice that does not sound like a robot. Shown only when
+ * the machine has nothing but the compact voices installed, which is the
+ * default state of every Mac.
+ */
+.speech-hint {
+  display: flex;
+  gap: 11px;
+  margin-top: 18px;
+  padding: 13px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--accent-edge);
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+.speech-hint strong {
+  display: block;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-hi);
+}
+.speech-hint p {
+  margin: 5px 0 11px;
+  font-size: var(--fs-micro);
+  line-height: 1.7;
+  color: var(--text-mid);
+}
+.speech-hint em {
+  font-style: normal;
+  font-family: var(--font-mono);
+  color: var(--accent);
+}

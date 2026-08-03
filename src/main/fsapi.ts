@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { app } from 'electron'
 import type { DirEntry } from '../shared/types'
 
 const SKIP_DIRS = new Set([
@@ -92,4 +93,29 @@ export async function isDirectory(target: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+/**
+ * Park a dropped payload on disk and hand back its path.
+ *
+ * Most drops carry a real file and keep their own path — that one is better,
+ * because the agent then reads the file you actually dropped. This is for the
+ * other kind: an image dragged straight out of a web page or a screenshot tool
+ * arrives as bytes with nowhere to point at. Writing it out is what turns it
+ * into something a terminal can name.
+ */
+export async function saveDropped(name: string, bytes: Uint8Array): Promise<string> {
+  const dir = path.join(app.getPath('temp'), 'eaon-ade-drops')
+  await fs.mkdir(dir, { recursive: true })
+
+  // Keep the extension — it is how everything downstream knows it is an image —
+  // and throw away anything else that could climb out of this folder.
+  const safe = path.basename(name || 'dropped').replace(/[^\w.-]+/g, '-').slice(-64) || 'dropped'
+  const stamp = Date.now().toString(36)
+  const ext = path.extname(safe)
+  const stem = ext ? safe.slice(0, -ext.length) : safe
+  const target = path.join(dir, `${stem || 'image'}-${stamp}${ext}`)
+
+  await fs.writeFile(target, bytes)
+  return target
 }

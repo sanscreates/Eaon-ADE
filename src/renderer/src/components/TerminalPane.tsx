@@ -16,6 +16,8 @@ import {
 import type { PaneSpec, Workspace } from '@shared/types'
 import { useStore } from '../store/useStore'
 import { terminals } from '../lib/terminals'
+import { carriesFiles, lineFor, pathsFromDrop } from '../lib/drop'
+import { branchOf } from '../lib/branch'
 import { MOD } from '../lib/util'
 
 export function TerminalPane({
@@ -42,6 +44,10 @@ export function TerminalPane({
   const [query, setQuery] = useState('')
   const [size, setSize] = useState<{ cols: number; rows: number } | null>(null)
   const [contextAt, setContextAt] = useState<{ x: number; y: number } | null>(null)
+  // Counted, not a boolean: dragging over a child fires enter/leave in pairs,
+  // and a single flag flickers off every time the pointer crosses one.
+  const dragDepth = useRef(0)
+  const [dropping, setDropping] = useState(false)
 
   const active = workspace.activePaneId === pane.id
   const zoomed = workspace.zoomedPaneId === pane.id
@@ -50,7 +56,12 @@ export function TerminalPane({
     const host = hostRef.current
     if (!host) return
     terminals.attach(pane.id, host, settings)
-    terminals.spawn(pane.id, pane.cwd, pane.command, settings)
+    terminals.spawn(
+      pane.id,
+      pane.cwd,
+      { command: pane.command, agentId: pane.agentId, sessionId: pane.sessionId },
+      settings
+    )
     return () => terminals.detach(pane.id)
     // Settings changes are pushed through terminals.applySettings, not here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -70,21 +81,35 @@ export function TerminalPane({
     }
   }, [pane.id])
 
-  // Branch chip — cheap enough to refresh while a pane is open.
+  // Branch chip. Goes through the shared cache, so a grid of panes over one
+  // folder costs a single `git` call rather than one per pane.
   useEffect(() => {
     let live = true
     const read = (): void => {
-      window.eaon.git.branch(pane.cwd).then((b) => {
+      // Nothing here is worth doing behind another window.
+      if (document.hidden) return
+      branchOf(pane.cwd).then((b) => {
         if (live && b !== pane.branch) patchPane(pane.id, { branch: b })
       })
     }
     read()
     const id = window.setInterval(read, 15000)
+    document.addEventListener('visibilitychange', read)
     return () => {
       live = false
       window.clearInterval(id)
+      document.removeEventListener('visibilitychange', read)
     }
   }, [pane.id, pane.cwd, pane.branch, patchPane])
+
+  // ⌘F is caught by the app's shortcut layer, which cannot reach into a pane;
+  // it names the pane instead and the pane opens its own search box.
+  const findPaneId = useStore((s) => s.findPaneId)
+  useEffect(() => {
+    if (findPaneId !== pane.id) return
+    setFindOpen(true)
+    useStore.getState().setFindPane(null)
+  }, [findPaneId, pane.id])
 
   useEffect(() => {
     if (!menuOpen) return
@@ -110,6 +135,42 @@ export function TerminalPane({
         else focusPane(workspace.id, pane.id)
       }}
       aria-label={`Pane ${pane.name}`}
+      data-dropping={dropping}
+      onDragEnter={(e) => {
+        if (!carriesFiles(e.dataTransfer)) return
+        e.preventDefault()
+        dragDepth.current += 1
+        setDropping(true)
+      }}
+      onDragOver={(e) => {
+        if (!carriesFiles(e.dataTransfer)) return
+        // Without this the drop never fires and the window navigates instead.
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+      }}
+      onDragLeave={() => {
+        dragDepth.current = Math.max(0, dragDepth.current - 1)
+        if (dragDepth.current === 0) setDropping(false)
+      }}
+      onDrop={(e) => {
+        if (!carriesFiles(e.dataTransfer)) return
+        e.preventDefault()
+        e.stopPropagation()
+        dragDepth.current = 0
+        setDropping(false)
+        const dt = e.dataTransfer
+        void (async () => {
+          const paths = await pathsFromDrop(dt)
+          if (!paths.length) return
+          focusPane(workspace.id, pane.id)
+          // Typed onto the prompt and left there, like every other way text
+          // arrives in this app — a path is only useful once you have said what
+          // to do with it, so nothing is sent. The trailing space is what a
+          // terminal leaves you, ready for the next word.
+          terminals.paste(pane.id, `${lineFor(paths)} `)
+          terminals.focus(pane.id)
+        })()
+      }}
     >
       <header className="pane-head">
         <span className="pane-dot" />

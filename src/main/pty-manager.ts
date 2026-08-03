@@ -42,12 +42,17 @@ const DROP_EXACT = new Set([
 interface Session {
   proc: pty.IPty
   buffer: string[]
+  /** Bytes currently sitting in `buffer`, tracked so a flood can be capped. */
+  buffered: number
   timer: NodeJS.Timeout | null
   alive: boolean
   /** Command waiting for the shell to finish printing its prompt. */
   pendingCommand: string | null
   commandTimer: NodeJS.Timeout | null
   sawOutput: boolean
+  /** Unique per spawn, so a restarted pane never settles the old one's wait. */
+  token: number
+  pid: number
 }
 
 type Sender = (channel: string, payload: unknown) => void
@@ -66,19 +71,52 @@ type Sender = (channel: string, payload: unknown) => void
 export class PtyManager {
   private sessions = new Map<string, Session>()
   private readonly flushMs = 12
+  /**
+   * Most a single shell may queue between flushes. `cat`-ing a large binary
+   * produces megabytes faster than the renderer can draw them, and without a
+   * ceiling that backlog lives in main-process memory and crosses IPC in full.
+   * Past the cap the oldest bytes go — a terminal only ever shows the tail.
+   */
+  private readonly maxBuffered = 256 * 1024
   private send: Sender = () => {}
+  /** Set while there is no window to talk to, so sends are dropped, not thrown. */
+  private muted = false
+  private nextToken = 1
+  /** Resolvers for shells we are waiting to see reaped, keyed by spawn token. */
+  private reaping = new Map<number, () => void>()
 
   /** Called once at startup with a sender that resolves the live window. */
   setSender(sender: Sender): void {
     this.send = sender
+    this.muted = false
+  }
+
+  /**
+   * Re-opens the channel after a window went away.
+   *
+   * On macOS closing the window does not quit the app, and clicking the Dock
+   * icon builds a new one. The sender resolves the live window at send time, so
+   * it stays valid across that — only the mute needs lifting.
+   */
+  unmute(): void {
+    this.muted = false
   }
 
   private emit(channel: string, payload: unknown): void {
+    if (this.muted) return
     try {
       this.send(channel, payload)
     } catch {
       /* the window went away between the check and the send */
     }
+  }
+
+  /** Releases anything waiting on this shell to be reaped. */
+  private settle(token: number): void {
+    const done = this.reaping.get(token)
+    if (!done) return
+    this.reaping.delete(token)
+    done()
   }
 
   private defaultShell(): string {
@@ -136,11 +174,14 @@ export class PtyManager {
       const session: Session = {
         proc,
         buffer: [],
+        buffered: 0,
         timer: null,
         alive: true,
         pendingCommand: req.command?.trim() || null,
         commandTimer: null,
-        sawOutput: false
+        sawOutput: false,
+        token: this.nextToken++,
+        pid: proc.pid
       }
       this.sessions.set(req.paneId, session)
 
@@ -154,11 +195,18 @@ export class PtyManager {
           }
 
           session.buffer.push(chunk)
+          session.buffered += chunk.length
+          // Under a flood, keep the tail and drop what nobody would have read.
+          while (session.buffered > this.maxBuffered && session.buffer.length > 1) {
+            session.buffered -= session.buffer.shift()!.length
+          }
+
           if (session.timer) return
           session.timer = setTimeout(() => {
             session.timer = null
             const data = session.buffer.join('')
             session.buffer.length = 0
+            session.buffered = 0
             if (data) this.emit('pty:data', { paneId: req.paneId, data })
           }, this.flushMs)
         } catch {
@@ -179,11 +227,17 @@ export class PtyManager {
           }
           const tail = session.buffer.join('')
           session.buffer.length = 0
+          session.buffered = 0
           if (tail) this.emit('pty:data', { paneId: req.paneId, data: tail })
           this.emit('pty:exit', { paneId: req.paneId, exitCode, signal })
-          this.sessions.delete(req.paneId)
         } catch {
-          this.sessions.delete(req.paneId)
+          /* never let this reach node-pty's thread-safe function */
+        } finally {
+          // Only if this pane has not already been handed a fresh shell.
+          if (this.sessions.get(req.paneId)?.token === session.token) {
+            this.sessions.delete(req.paneId)
+          }
+          this.settle(session.token)
         }
       })
 
@@ -259,7 +313,59 @@ export class PtyManager {
 
   /** Stops sending to the renderer, then tears every shell down. */
   killAll(): void {
-    this.send = () => {}
+    this.muted = true
     for (const id of [...this.sessions.keys()]) this.kill(id)
+  }
+
+  /**
+   * Tears every shell down and waits for the kernel to actually reap them.
+   *
+   * This is the difference between quitting and aborting, and it is the whole
+   * reason the app used to die with SIGABRT instead of exiting. node-pty waits
+   * on each child from its own thread and reports the exit back through a
+   * thread-safe function. If that call lands after V8 has begun tearing the
+   * environment down, N-API cannot deliver it, so node-addon-api raises a C++
+   * exception with no JavaScript frame anywhere to catch it — `std::terminate`,
+   * then `abort`. Nothing on the JS side can guard against that, because the
+   * throw happens before any of our code is reached.
+   *
+   * Waiting here means those callbacks have already run, and the thread-safe
+   * functions have already been released, while the environment was still
+   * whole. SIGHUP is what a closing terminal sends; anything still standing
+   * after `graceMs` is not going to leave politely and gets SIGKILL.
+   */
+  async shutdown(timeoutMs = 2000, graceMs = 600): Promise<void> {
+    this.muted = true
+
+    const doomed = [...this.sessions.values()].map((s) => ({ token: s.token, pid: s.pid }))
+    if (!doomed.length) return
+
+    const reaped = doomed.map(
+      ({ token }) => new Promise<void>((resolve) => this.reaping.set(token, resolve))
+    )
+    const outstanding = (): number => doomed.filter((d) => this.reaping.has(d.token)).length
+
+    for (const id of [...this.sessions.keys()]) this.kill(id)
+
+    const wait = (ms: number): Promise<void> =>
+      new Promise<void>((resolve) => setTimeout(resolve, ms).unref())
+
+    await Promise.race([Promise.all(reaped).then(() => undefined), wait(graceMs)])
+
+    if (outstanding()) {
+      for (const { token, pid } of doomed) {
+        if (!this.reaping.has(token) || !pid) continue
+        try {
+          process.kill(pid, 'SIGKILL')
+        } catch {
+          /* already gone, or never ours to signal */
+        }
+      }
+      await Promise.race([Promise.all(reaped).then(() => undefined), wait(timeoutMs - graceMs)])
+    }
+
+    // Whatever is still outstanding will never be settled; drop the waits so
+    // nothing holds a reference into the dying environment.
+    this.reaping.clear()
   }
 }
