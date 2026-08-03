@@ -26,6 +26,11 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    # Only needed to attach artifacts to a release, and only the publish path
+    # uses it. The default token is read-only, which is why publishing came
+    # back 403 while every other step was fine.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
