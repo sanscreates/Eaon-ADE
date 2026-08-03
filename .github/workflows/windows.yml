@@ -51,12 +51,8 @@ jobs:
       - name: Fetch the other architectures' native binaries
         run: npm run deps:win
 
-      # Never publishes on its own. A tag push builds and keeps the artifacts;
-      # attaching them to a release is a decision someone makes on purpose.
       - name: Package
-        run: npx electron-builder --win --publish ${{ (github.event_name == 'workflow_dispatch' && inputs.publish) && 'always' || 'never' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --publish never
 
       - name: What was built
         shell: pwsh
@@ -106,6 +102,30 @@ jobs:
             exit 1
           }
           Write-Host "`nboth installers install, launch and pass."
+
+      # Uploaded here rather than by electron-builder, which refuses to add
+      # assets to a release published more than two hours ago and says so in a
+      # line that scrolls past in a successful build. Nothing about attaching a
+      # file to a release should depend on how long ago the release was cut.
+      #
+      # Only ever on an explicit request: a tag push builds and tests, and
+      # putting the result in front of people stays a decision someone makes.
+      - name: Attach them to the release
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $tag = "v$version"
+          Write-Host "attaching to $tag"
+          $files = Get-ChildItem dist -File |
+                   Where-Object { $_.Name -match '(setup\.exe|-win\.zip|^latest\.yml$)' } |
+                   ForEach-Object { $_.FullName }
+          if (-not $files) { throw 'nothing to attach' }
+          $files | ForEach-Object { Write-Host "  $(Split-Path $_ -Leaf)" }
+          gh release upload $tag @files --clobber --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw 'upload failed' }
 
       - name: Keep the artifacts
         if: always()
