@@ -126,12 +126,22 @@ const mounted = await evaluate(`
 `)
 check('the interface mounts', mounted === true, mounted)
 
-const env = await evaluate(`({
-  platform: navigator.platform,
-  hasBridge: typeof window.eaon === 'object' && window.eaon !== null,
-  bridge: window.eaon ? Object.keys(window.eaon).sort() : [],
-  version: window.eaon ? await window.eaon.sys.info().then(i => i.version).catch(() => null) : null
-})`)
+// A promise, not an await: the expression is evaluated as an ordinary one, so
+// a top-level await in it is a syntax error rather than a wait.
+const env = await evaluate(`
+  new Promise((resolve) => {
+    const base = {
+      platform: navigator.platform,
+      hasBridge: typeof window.eaon === 'object' && window.eaon !== null,
+      bridge: window.eaon ? Object.keys(window.eaon).sort() : []
+    }
+    if (!base.hasBridge || !window.eaon.sys) return resolve(base)
+    window.eaon.sys
+      .info()
+      .then((i) => resolve(Object.assign({ version: i && i.version }, base)))
+      .catch(() => resolve(base))
+  })
+`)
 check('it knows it is on Windows', String(env?.platform || '').startsWith('Win'), env?.platform)
 check('the preload bridge is attached', env?.hasBridge === true, env)
 for (const api of ['pty', 'stats', 'brain', 'sessions']) {
