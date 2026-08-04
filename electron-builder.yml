@@ -56,6 +56,12 @@ mac:
   files:
     - '!**/node_modules/onnxruntime-node/bin/napi-v6/{win32,linux}/**'
     - '!**/node_modules/node-pty/prebuilds/{win32-x64,win32-arm64,darwin-x64}/**'
+    # A machine that has cross-built for Windows has the Windows sharp binaries
+    # sitting in node_modules, and without this they ride along inside the mac
+    # app — sixteen megabytes that cannot load, code-signed and sent to Apple
+    # for notarisation as though they were ours to ship.
+    - '!**/node_modules/@img/sharp-{win32,linux}*/**'
+    - '!**/node_modules/@img/sharp-libvips-{win32,linux}*/**'
 dmg:
   # Sign the disk image itself, not just the app inside it. Without this the
   # image carries a notarisation ticket but no signature, and Gatekeeper's
