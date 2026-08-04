@@ -722,6 +722,17 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  /*
+   * One column width for everything in here, so every left edge agrees and the
+   * whole thing can be centred as a unit. Two different caps — one for text,
+   * a wider one for the theme grid — cannot both be centred without their
+   * edges disagreeing by fifty pixels.
+   */
+  --settings-col: 860px;
+  /* Matches ::-webkit-scrollbar in base.css. The pane reserves this on both
+     sides so its column stays centred; the heading has to be inset by the
+     same amount or the title sits proud of the content beneath it. */
+  --settings-gutter: 10px;
 }
 
 .settings-head {
@@ -729,7 +740,10 @@
   align-items: center;
   gap: 12px;
   flex: 0 0 auto;
-  padding: 22px 26px 14px;
+  padding: 22px calc(26px + var(--settings-gutter)) 14px;
+  width: 100%;
+  max-width: calc(var(--settings-col) + 52px + var(--settings-gutter) * 2);
+  margin-inline: auto;
 }
 .settings-title {
   margin: 0;
@@ -750,12 +764,23 @@
   min-width: 0;
   overflow-y: auto;
   padding: 0 26px 32px;
-}
-.settings-pane > * {
-  max-width: 760px;
-}
-.settings-pane .theme-grid {
-  max-width: 860px;
+  /*
+   * The column is centred by the track, not by each child's own margins.
+   * Several of these set `margin` in full — `.settings-lede` among them — and
+   * that shorthand lands later at the same specificity, quietly resetting an
+   * auto margin back to zero and stranding the content against the rail.
+   * Placing one grid track leaves child margins to do their own job.
+   */
+  display: grid;
+  grid-template-columns: minmax(0, var(--settings-col));
+  justify-content: center;
+  align-content: start;
+  /*
+   * Reserved on both sides, so the scrollbar cannot shift the centred column a
+   * few pixels away from the heading above it — which reads as a jog between
+   * the title and the content it belongs to.
+   */
+  scrollbar-gutter: stable both-edges;
 }
 
 .settings-lede {
