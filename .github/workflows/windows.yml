@@ -26,6 +26,11 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    # Only needed to attach artifacts to a release, and only the publish path
+    # uses it. The default token is read-only, which is why publishing came
+    # back 403 while every other step was fine.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -40,46 +45,136 @@ jobs:
       - name: Typecheck and bundle
         run: npm run build
 
-      # Never publishes on its own. A tag push builds and keeps the artifacts;
-      # attaching them to a release is a decision someone makes on purpose.
+      # npm installs only the sharp binary matching this runner, so the arm64
+      # and ia32 packages would ship without one. Nothing fails at package time;
+      # it fails the first time somebody on those machines dictates.
+      - name: Fetch the other architectures' native binaries
+        run: npm run deps:win
+
       - name: Package
-        run: npx electron-builder --win --publish ${{ (github.event_name == 'workflow_dispatch' && inputs.publish) && 'always' || 'never' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win --publish never
 
       - name: What was built
         shell: pwsh
         run: Get-ChildItem dist -File | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}} | Format-Table -AutoSize
 
-      # /S is NSIS's silent switch. The install is per-user, so it needs no
-      # elevation — the same path a person double-clicking would take.
-      - name: Install it
-        shell: pwsh
-        run: |
-          $setup = Get-ChildItem dist -Filter '*x64-setup.exe' | Select-Object -First 1
-          if (-not $setup) { throw 'no x64 installer was produced' }
-          Write-Host "installing $($setup.Name)"
-          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -PassThru -Wait
-          Write-Host "installer exit code: $($p.ExitCode)"
-          if ($p.ExitCode -ne 0) { throw "the installer failed with $($p.ExitCode)" }
-
-      - name: Find what it installed
-        id: installed
-        shell: pwsh
-        run: |
-          $roots = @("$env:LOCALAPPDATA\Programs", "$env:ProgramFiles", "${env:ProgramFiles(x86)}") |
-                   Where-Object { $_ -and (Test-Path $_) }
-          $exe = Get-ChildItem -Path $roots -Recurse -Filter 'Eaon ADE.exe' -ErrorAction SilentlyContinue |
-                 Select-Object -First 1
-          if (-not $exe) { throw 'the installer reported success but nothing was installed' }
-          Write-Host "installed at $($exe.FullName)"
-          "exe=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-
-      - name: Does it run
+      # Each installer is installed, driven and removed in turn. /S is NSIS's
+      # silent switch, and the install is per-user, so this needs no elevation —
+      # the same path a person double-clicking would take. A 32-bit build runs
+      # on a 64-bit runner through WOW64, which is how it would run on the
+      # 32-bit machines it is meant for.
+      - name: Install each installer and run it
         shell: pwsh
         env:
           SMOKE_PORT: '9222'
-        run: node scripts/smoke-windows.mjs "${{ steps.installed.outputs.exe }}"
+        run: |
+          $failures = @()
+          foreach ($arch in @('x64', 'ia32')) {
+            $setup = Get-ChildItem dist -Filter "*-$arch-setup.exe" | Select-Object -First 1
+            if (-not $setup) { $failures += "$arch : no installer was produced"; continue }
+
+            Write-Host "`n=== $arch : installing $($setup.Name) ==="
+            $p = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -PassThru -Wait
+            if ($p.ExitCode -ne 0) { $failures += "$arch : installer exit $($p.ExitCode)"; continue }
+
+            $roots = @("$env:LOCALAPPDATA\Programs", "$env:ProgramFiles", "${env:ProgramFiles(x86)}") |
+                     Where-Object { $_ -and (Test-Path $_) }
+            $exe = Get-ChildItem -Path $roots -Recurse -Filter 'Eaon ADE.exe' -ErrorAction SilentlyContinue |
+                   Select-Object -First 1
+            if (-not $exe) { $failures += "$arch : installed nothing"; continue }
+            Write-Host "$arch : installed at $($exe.FullName)"
+
+            # Every shortcut the installer made must point at something that
+            # is there. A shortcut left aimed at a missing exe is what produces
+            # "Windows is searching for Eaon ADE.exe" — the installer looks
+            # like it worked and the app cannot be started from the desktop.
+            $shell = New-Object -ComObject WScript.Shell
+            $shortcutDirs = @(
+              [Environment]::GetFolderPath('Desktop'),
+              [Environment]::GetFolderPath('CommonDesktopDirectory'),
+              (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'),
+              (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs')
+            ) | Where-Object { $_ -and (Test-Path $_) }
+
+            $links = @(Get-ChildItem -Path $shortcutDirs -Recurse -Filter '*.lnk' -ErrorAction SilentlyContinue |
+                       Where-Object { $_.BaseName -like '*Eaon*' })
+            if ($links.Count -eq 0) { $failures += "$arch : the installer made no shortcuts" }
+            foreach ($l in $links) {
+              $target = $shell.CreateShortcut($l.FullName).TargetPath
+              if ($target -and (Test-Path $target)) {
+                Write-Host "$arch : shortcut ok  $($l.Name) -> $target"
+              } else {
+                $failures += "$arch : broken shortcut $($l.FullName) -> '$target'"
+              }
+            }
+
+            node scripts/smoke-windows.mjs "$($exe.FullName)"
+            if ($LASTEXITCODE -ne 0) { $failures += "$arch : the app did not pass" }
+
+            # Out of the way before the next one, so each is tested on its own
+            # rather than on whatever the previous install left behind.
+            $uninstaller = Join-Path $exe.Directory.FullName 'Uninstall Eaon ADE.exe'
+            if (Test-Path $uninstaller) {
+              Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait
+              Start-Sleep -Seconds 15
+
+              # A shortcut that outlives the app it points at is the other way
+              # to get "Windows is searching for Eaon ADE.exe".
+              $left = @(Get-ChildItem -Path $shortcutDirs -Recurse -Filter '*.lnk' -ErrorAction SilentlyContinue |
+                        Where-Object { $_.BaseName -like '*Eaon*' })
+              foreach ($l in $left) {
+                $target = $shell.CreateShortcut($l.FullName).TargetPath
+                if (-not ($target -and (Test-Path $target))) {
+                  $failures += "$arch : uninstall left a dead shortcut at $($l.FullName)"
+                }
+              }
+            }
+          }
+
+          if ($failures.Count) {
+            Write-Host "`n--- failed ---"
+            $failures | ForEach-Object { Write-Host "  $_" }
+            exit 1
+          }
+          Write-Host "`nboth installers install, launch and pass."
+
+      # Uploaded here rather than by electron-builder, which refuses to add
+      # assets to a release published more than two hours ago and says so in a
+      # line that scrolls past in a successful build. Nothing about attaching a
+      # file to a release should depend on how long ago the release was cut.
+      #
+      # Only ever on an explicit request: a tag push builds and tests, and
+      # putting the result in front of people stays a decision someone makes.
+      - name: Attach them to the release
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          $tag = "v$version"
+          Write-Host "attaching to $tag"
+          # The product name has a space in it and GitHub turns a space in an
+          # asset name into a dot — "Eaon.ADE-1.0.3-x64-setup.exe" — while
+          # latest.yml, which electron-builder wrote, spells it with a hyphen.
+          # Every download link and every Windows auto-update would 404 on that
+          # mismatch. So each file is staged under the name the manifest asks
+          # for before it goes anywhere near the release.
+          $staging = Join-Path $env:RUNNER_TEMP 'release-assets'
+          Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $staging | Out-Null
+
+          $files = Get-ChildItem dist -File |
+                   Where-Object { $_.Name -match '(setup\.exe|-win\.zip|^latest\.yml$)' } |
+                   ForEach-Object {
+                     $target = Join-Path $staging ($_.Name -replace ' ', '-')
+                     Copy-Item $_.FullName $target
+                     $target
+                   }
+          if (-not $files) { throw 'nothing to attach' }
+          $files | ForEach-Object { Write-Host "  $(Split-Path $_ -Leaf)" }
+          gh release upload $tag @files --clobber --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw 'upload failed' }
 
       - name: Keep the artifacts
         if: always()
