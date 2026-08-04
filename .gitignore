@@ -11,3 +11,8 @@ dev-app-update.yml
 # Machine-specific: absolute paths to this install. Regenerated per machine.
 # The memories themselves (.eaonbrain/) are committed on purpose.
 .mcp.json
+
+# Instructions for the agents working in this repo. Local guidance, not part of
+# the product, and not something to publish alongside it — it stays on the
+# machines that need it.
+CLAUDE.md
