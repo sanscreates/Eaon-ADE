@@ -8,6 +8,8 @@ import { Store } from './store'
 import * as fsapi from './fsapi'
 import * as git from './git'
 import { launchCommand, listResumable, sessionCountFor } from './sessions'
+import { PaneSessions } from './pane-sessions'
+import { SessionWatch } from './session-watch'
 import { collectStats } from './stats'
 import { anthropicUsage, localUsage, resetUsageCache } from './usage'
 import * as browser from './browser'
@@ -25,6 +27,9 @@ const run = promisify(execFile)
 
 let mainWindow: BrowserWindow | null = null
 let store: Store
+/** What each pane was last seen running, so it can be reopened. */
+let paneSessions: PaneSessions
+let sessionWatch: SessionWatch
 const ptys = new PtyManager()
 const stt = new SttHost()
 const updater = new Updater()
@@ -163,8 +168,12 @@ function createWindow(): BrowserWindow {
   win.webContents.session.setPermissionCheckHandler((_wc, permission) => ALLOWED.has(permission))
 
   // Tear the shells down before the renderer goes away, so no PTY read lands
-  // on a destroyed webContents.
-  win.on('close', () => ptys.killAll())
+  // on a destroyed webContents. The watch stops first: an agent going away is
+  // otherwise read as one you closed, and every agent goes away here at once.
+  win.on('close', () => {
+    sessionWatch?.stop()
+    ptys.killAll()
+  })
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null
   })
@@ -206,6 +215,8 @@ function createWindow(): BrowserWindow {
   win.webContents.on('responsive', () => console.error('[eaon] renderer responsive again'))
 
   ptys.unmute()
+  // Idempotent, and here for a window being opened a second time.
+  sessionWatch?.start()
 
   // Anything that wants a new window opens in the user's browser instead.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -246,8 +257,12 @@ function registerIpc(): void {
   // ---- terminals -------------------------------------------------------
   ipcMain.handle('pty:spawn', (_e, req: SpawnRequest) =>
     // The session flags are decided here, where the transcripts are, rather
-    // than in the renderer where they would only be a guess.
-    ptys.spawn({ ...req, command: launchCommand(req) })
+    // than in the renderer where they would only be a guess — and where what
+    // the pane was last seen running is known, which the renderer never learns.
+    ptys.spawn({
+      ...req,
+      command: launchCommand({ ...req, observed: paneSessions?.get(req.paneId) })
+    })
   )
   ipcMain.on('pty:write', (_e, paneId: string, data: string) => ptys.write(paneId, data))
   ipcMain.on('pty:resize', (_e, paneId: string, cols: number, rows: number) =>
@@ -455,6 +470,11 @@ app.whenReady().then(() => {
   }
 
   store = new Store()
+  paneSessions = new PaneSessions()
+  // Watches for the agents nobody told the app about — the ones you start by
+  // typing `claude` into a shell — so those panes come back too.
+  sessionWatch = new SessionWatch(() => ptys.pids(), paneSessions)
+  sessionWatch.start()
   // Before anything asks which models are installed.
   models.migrateFromPreviousName()
 
@@ -540,6 +560,21 @@ async function shutdownAndExit(): Promise<void> {
   }
   try {
     store?.flush()
+  } catch {
+    /* nothing here is worth blocking a quit */
+  }
+  try {
+    /*
+     * Before the shells are reaped, and in this order.
+     *
+     * The watch reads a missing agent as one you closed and forgets its
+     * conversation. Every agent is about to disappear at once, so leaving it
+     * running through the shutdown would erase precisely the record the next
+     * launch is meant to read — the sessions would be forgotten by the act of
+     * quitting, which is the one moment they have to survive.
+     */
+    sessionWatch?.stop()
+    paneSessions?.flush()
   } catch {
     /* nothing here is worth blocking a quit */
   }

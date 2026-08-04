@@ -303,6 +303,19 @@ export class PtyManager {
     }, delay)
   }
 
+  /**
+   * The live shell behind each pane, so what is running inside one can be found
+   * by walking down from it. This is the only link between a pane and the agent
+   * in it — the agent itself carries nothing that names the terminal.
+   */
+  pids(): Map<string, number> {
+    const out = new Map<string, number>()
+    for (const [paneId, session] of this.sessions) {
+      if (session.alive && session.pid > 0) out.set(paneId, session.pid)
+    }
+    return out
+  }
+
   write(paneId: string, data: string): void {
     const s = this.sessions.get(paneId)
     if (!s?.alive) return

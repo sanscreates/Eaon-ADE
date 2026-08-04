@@ -1,9 +1,28 @@
 import fs from 'node:fs/promises'
-import { createReadStream, statSync } from 'node:fs'
+import { closeSync, createReadStream, openSync, readSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { SESSION_FLAGS, type ResumableSession } from '../shared/types'
+import { AGENTS, SESSION_FLAGS, type ResumableSession } from '../shared/types'
 import { isInside } from '../shared/paths'
+
+/**
+ * An agent conversation seen running in a pane, as opposed to one the app
+ * started itself.
+ *
+ * Most sessions begin by hand: you open a plain shell and type `claude`. The
+ * pane's own record knows nothing about that — it was created as a shell and
+ * stays one — so what was actually running has to be watched for and written
+ * down separately. That is what this is, and it is why a pane can come back to
+ * a conversation nobody ever told the app about.
+ */
+export interface ObservedSession {
+  agentId: string
+  sessionId: string
+  /** Where the agent was started, which is the folder its transcript is filed under. */
+  cwd: string
+  /** When it was last seen alive, so records for panes long gone can be dropped. */
+  at: number
+}
 
 /** Reads the first `bytes` of a file without pulling the whole thing into memory. */
 async function readHead(file: string, bytes = 8192): Promise<string> {
@@ -262,29 +281,113 @@ export async function sessionCountFor(cwd: string): Promise<number> {
 }
 
 /**
- * Whether a conversation has actually been recorded yet.
+ * Enough of a transcript to find its opening turn.
  *
- * Starting an agent and never speaking to it leaves no transcript at all —
- * measured, not assumed — so a pane can hold a session id that names nothing.
- * Asking the disk first is what keeps a restart from trying to reopen a
- * conversation that was never had, which the agent would refuse.
+ * These files reach hundreds of megabytes, and the first thing anybody said is
+ * within the first few kilobytes of every one of them, so the head is read and
+ * the rest is left alone.
+ */
+const HEAD_BYTES = 256 * 1024
+
+/** A line that means somebody spoke, as opposed to session bookkeeping. */
+const TURN_RE = /"type"\s*:\s*"(?:user|assistant)"/
+
+/**
+ * How usable a session id is, which is not a yes or no question.
+ *
+ * Three states, because two of them fail in opposite directions and want
+ * opposite commands:
+ *
+ *   'conversation' — turns are on disk, and `--resume` reopens them.
+ *   'none'         — nothing is filed under this id, so `--session-id` can
+ *                    claim it and the pane keeps the same conversation the
+ *                    next time it opens.
+ *   'reserved'     — a file exists but holds no conversation, which happens
+ *                    when an agent is started and closed without a word. Both
+ *                    of the above are refused here: `--resume` answers "No
+ *                    conversation found with session ID" and `--session-id`
+ *                    answers "Session ID is already in use". Both measured,
+ *                    against this machine. The id is spent, and the only thing
+ *                    left that works is to start clean.
+ */
+type SessionState = 'conversation' | 'reserved' | 'none'
+
+function fileState(file: string): SessionState {
+  let fd: number
+  try {
+    fd = openSync(file, 'r')
+  } catch {
+    return 'none'
+  }
+  try {
+    const buf = Buffer.allocUnsafe(HEAD_BYTES)
+    const read = readSync(fd, buf, 0, HEAD_BYTES, 0)
+    return read > 0 && TURN_RE.test(buf.toString('utf8', 0, read)) ? 'conversation' : 'reserved'
+  } catch {
+    return 'reserved'
+  } finally {
+    closeSync(fd)
+  }
+}
+
+function sessionState(cwd: string, sessionId: string): SessionState {
+  // A session id is ours, but it still ends up in a path. Anything that is not
+  // one is treated as spent, so it is never handed to a flag.
+  if (!cwd || !sessionId || !/^[0-9a-fA-F-]{36}$/.test(sessionId)) return 'reserved'
+  /*
+   * The one directory the folder derives to, and deliberately not the wider
+   * search `projectDirsFor` does.
+   *
+   * That one also takes directories beginning with the slug, which is right
+   * when listing what could be resumed and wrong here. The names collide: a
+   * folder called `Eaon` and one called `Eaon ADE` derive to `…-Eaon` and
+   * `…-Eaon-ADE`, and the second reads as a continuation of the first. Reopening
+   * is asked for from a working directory, and the agent looks under the
+   * directory that working directory derives to — so a conversation filed under
+   * a neighbour's name is not this one's to offer, and offering it produces the
+   * "No conversation found" this is all meant to prevent.
+   */
+  return fileState(path.join(projectsRoot(), projectSlug(cwd), `${sessionId}.jsonl`))
+}
+
+/**
+ * Whether a conversation can actually be reopened — which is not the same
+ * question as whether a file exists.
+ *
+ * An agent started and never spoken to writes no transcript at all, and one
+ * interrupted early leaves a few hundred bytes of mode and snapshot records
+ * with no conversation inside them. `claude --resume` answers both with "No
+ * conversation found with session ID" — measured against a real one, not
+ * assumed — so a turn somebody actually took is what is looked for here.
+ *
+ * Getting this wrong is not cosmetic. The pane comes back to an error message
+ * where the work it was holding should have been.
  */
 export function hasTranscript(cwd: string, sessionId: string): boolean {
-  if (!cwd || !sessionId) return false
-  // A session id is ours, but it still ends up in a path, so it is checked.
-  if (!/^[0-9a-fA-F-]{36}$/.test(sessionId)) return false
-  const file = path.join(
-    os.homedir(),
-    '.claude',
-    'projects',
-    projectSlug(cwd),
-    `${sessionId}.jsonl`
-  )
-  try {
-    return statSync(file).size > 0
-  } catch {
-    return false
-  }
+  return sessionState(cwd, sessionId) === 'conversation'
+}
+
+/** Wraps a path so a shell reads it as one word, however it is spelled. */
+function quote(dir: string): string {
+  return `'${dir.replace(/'/g, `'\\''`)}'`
+}
+
+/**
+ * Reopening a conversation that was seen running, from wherever it was running.
+ *
+ * The folder is part of the answer. A transcript is filed under the directory
+ * the agent started in, so a session begun after a `cd` cannot be found from
+ * the pane's own root — carrying the directory along with the command is what
+ * brings those back rather than dropping them.
+ */
+function resumeObserved(observed: ObservedSession, paneCwd: string): string | null {
+  const flags = SESSION_FLAGS[observed.agentId]
+  const bin = AGENTS.find((a) => a.id === observed.agentId)?.bin
+  if (!flags || !bin) return null
+  const cwd = observed.cwd || paneCwd
+  if (!hasTranscript(cwd, observed.sessionId)) return null
+  const line = `${bin} ${flags.resume} ${observed.sessionId}`
+  return cwd === paneCwd ? line : `cd ${quote(cwd)} && ${line}`
 }
 
 /**
@@ -301,8 +404,25 @@ export function launchCommand(req: {
   agentId?: string
   sessionId?: string | null
   cwd: string
+  /** What this pane was last seen running, whoever started it. */
+  observed?: ObservedSession | null
 }): string | null {
-  const { command, agentId, sessionId, cwd } = req
+  const { command, agentId, sessionId, cwd, observed } = req
+
+  /*
+   * Observation beats intention.
+   *
+   * Most conversations are not started by the app. You open a plain shell and
+   * type `claude`, and the pane's own record — created as a shell, with no
+   * agent and no command — never learns otherwise. Reading what was actually
+   * running is the only thing that brings those back, and where the two
+   * disagree the one that was watched is the one that was true.
+   */
+  if (observed) {
+    const resumed = resumeObserved(observed, cwd)
+    if (resumed) return resumed
+  }
+
   if (!command || !agentId || !sessionId) return command ?? null
 
   const flags = SESSION_FLAGS[agentId]
@@ -312,6 +432,10 @@ export function launchCommand(req: {
   // picker, say — is left exactly as the caller wrote it.
   if (/(^|\s)--(resume|session-id|continue)(\s|=|$)/.test(command)) return command
 
-  const flag = hasTranscript(cwd, sessionId) ? flags.resume : flags.pin
-  return `${command} ${flag} ${sessionId}`
+  const state = sessionState(cwd, sessionId)
+  // Neither flag works on a spent id, and a pane that opens on an error message
+  // is worse than one that opens on a fresh conversation. The watch will learn
+  // whatever this turns into.
+  if (state === 'reserved') return command
+  return `${command} ${state === 'conversation' ? flags.resume : flags.pin} ${sessionId}`
 }
