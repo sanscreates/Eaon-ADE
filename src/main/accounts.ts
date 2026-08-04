@@ -194,6 +194,35 @@ export class Accounts {
     return this.list()
   }
 
+  /**
+   * Who the original account belongs to, as an opaque id.
+   *
+   * Watched across a sign-in. Everything else about this feature rests on
+   * Claude Code keeping an account entirely inside its configuration
+   * directory — which is what it does with `projects/`, `sessions/` and
+   * `.claude.json`, measured — but a sign-in could not be completed here
+   * without a second account to complete it with, so the one step that was
+   * inferred rather than watched is the one that gets a guard. If signing in
+   * somewhere else changes who `~/.claude` belongs to, that is a sign-in that
+   * landed on the account it was supposed to leave alone, and saying so plainly
+   * beats leaving somebody to discover it.
+   *
+   * The identity, not the credentials: this is an opaque id, and it is compared
+   * rather than kept. Tokens are refreshed on their own schedule, so anything
+   * derived from them would cry wolf.
+   */
+  defaultIdentity(): string {
+    const { email } = describe(homeConfigDir())
+    try {
+      const conf = JSON.parse(
+        fs.readFileSync(path.join(os.homedir(), '.claude.json'), 'utf8')
+      ) as { oauthAccount?: { accountUuid?: string } }
+      return conf.oauthAccount?.accountUuid ?? email ?? ''
+    } catch {
+      return email ?? ''
+    }
+  }
+
   /** Makes an empty configuration directory for a sign-in to fill in. */
   reserve(): { id: string; configDir: string } {
     const id = `acct_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`

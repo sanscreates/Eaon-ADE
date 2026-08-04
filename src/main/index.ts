@@ -304,11 +304,28 @@ function registerIpc(): void {
   ipcMain.handle('accounts:beginLogin', () => {
     login?.flow.cancel()
     const { id, configDir } = accounts.reserve()
+    // Whose account `~/.claude` is, before anything signs in anywhere.
+    const before = accounts.defaultIdentity()
     const flow = new AccountLogin(configDir, (ok) => {
       if (ok) accounts.commit(id)
       else accounts.discard(id)
       const wc = mainWindow?.webContents
-      if (wc && !wc.isDestroyed()) wc.send('accounts:changed', accounts.list())
+      if (!wc || wc.isDestroyed()) return
+      wc.send('accounts:changed', accounts.list())
+
+      // A sign-in that changed who the original account belongs to went to the
+      // one account this feature exists to leave alone.
+      const after = accounts.defaultIdentity()
+      if (before && after && before !== after) {
+        wc.send('accounts:login', {
+          phase: 'error',
+          url: null,
+          output: null,
+          error:
+            'That sign-in replaced the account already on this machine instead of adding one. ' +
+            'Open Claude Code and sign back in to recover it.'
+        })
+      }
     })
     flow.onState((state) => {
       const wc = mainWindow?.webContents
