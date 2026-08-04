@@ -72,6 +72,23 @@ export function isPanelKind(kind: WorkspaceKind): kind is (typeof PANEL_KINDS)[n
   return kind !== 'terminals'
 }
 
+/**
+ * A group in the rail.
+ *
+ * Holds nothing itself — a workspace points at the folder it is filed under —
+ * so deleting one can never take a session with it. That is the whole reason it
+ * is modelled this way round rather than as a folder owning a list of ids: a
+ * workspace has exactly one home, and it cannot go missing by being in a list
+ * that got dropped.
+ */
+export interface WorkspaceFolder {
+  id: string
+  name: string
+  /** Folded shut in the rail. Remembered across restarts, like everything else. */
+  collapsed: boolean
+  createdAt: number
+}
+
 export interface Workspace {
   id: string
   /** Absent on anything saved before workspaces had kinds; read as 'terminals'. */
@@ -84,6 +101,11 @@ export interface Workspace {
   panes: PaneSpec[]
   activePaneId: string | null
   zoomedPaneId: string | null
+  /**
+   * The folder this is filed under, or null for the top level. Absent on
+   * anything saved before folders existed, which reads the same as null.
+   */
+  folderId: string | null
   createdAt: number
 }
 
@@ -198,6 +220,8 @@ export interface VaultNote {
 export interface PersistedState {
   version: number
   workspaces: Workspace[]
+  /** Rail groups. Absent on anything saved before folders existed. */
+  folders: WorkspaceFolder[]
   activeWorkspaceId: string | null
   presets: Preset[]
   recents: RecentFolder[]

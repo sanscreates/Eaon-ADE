@@ -221,18 +221,6 @@
   text-align: center;
   padding: 0 4px;
 }
-.ws-close {
-  display: none;
-  color: var(--text-lo);
-}
-.ws-item:hover .ws-close,
-.ws-item[data-active='true'] .ws-close {
-  display: grid;
-}
-.ws-close:hover {
-  color: var(--danger);
-}
-
 .rail-foot {
   padding: 8px;
   border-top: 1px solid var(--line-100);
@@ -434,4 +422,320 @@
   color: var(--text-hi);
   border-color: var(--line-300);
   background: var(--ink-200);
+}
+
+/* ---- rail folders ------------------------------------------------------- */
+
+.ws-folder {
+  border-radius: var(--r-md);
+  margin-bottom: 2px;
+}
+/* The whole group lights up, so what you are dropping into is the block you
+   are pointing at rather than a line somewhere inside it. */
+.ws-folder[data-drop='true'] {
+  background: var(--accent-wash);
+  box-shadow: inset 0 0 0 1px var(--accent-edge);
+}
+
+.ws-folder-row {
+  margin-bottom: 0;
+  height: 32px;
+  padding-left: 4px;
+  color: var(--text-lo);
+}
+/* A shut folder still says one of its workspaces is the one on screen. */
+.ws-folder-row[data-holding='true'] .ws-folder-glyph {
+  color: var(--accent);
+}
+
+.ws-caret {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  transition: transform var(--dur) var(--ease);
+}
+.ws-caret[data-open='true'] {
+  transform: rotate(90deg);
+}
+
+.ws-folder-glyph {
+  color: var(--text-lo);
+}
+
+/*
+ * The line down the left is what makes "inside" readable at a glance. Without
+ * it an indented row is just a row that starts further along.
+ */
+.ws-folder-body {
+  margin: 1px 0 4px 12px;
+  padding-left: 8px;
+  border-left: 1px solid var(--line-200);
+}
+
+.ws-folder-empty {
+  margin: 2px 0 4px;
+  padding: 5px 8px;
+  font-size: var(--fs-micro);
+  color: var(--text-dim);
+}
+
+/* Dropping onto empty space in the list is how something leaves a folder, so
+   that space has to look like a target while a drag is in the air. */
+.rail-list[data-drop='true'] {
+  box-shadow: inset 0 0 0 1px var(--accent-edge);
+  border-radius: var(--r-md);
+}
+
+.ws-item[data-nested='true'] {
+  height: 34px;
+}
+
+/* Renaming happens in the row, so the field has to sit exactly where the name
+   was rather than pushing the row around it. */
+.ws-rename {
+  flex: 1;
+  min-width: 0;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--accent-edge);
+  background: var(--ink-000);
+  color: var(--text-hi);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+}
+.ws-rename:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/*
+ * Right-click menu. Positioned in viewport coordinates from the pointer, so it
+ * is fixed rather than absolute — the rail scrolls, and a menu that scrolled
+ * with it would drift away from the row it belongs to.
+ */
+.rail-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 208px;
+  max-width: 264px;
+  padding: 5px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-200);
+  background: var(--ink-300);
+  box-shadow: var(--shadow-md);
+}
+.rail-menu .menu-item {
+  white-space: nowrap;
+  overflow: hidden;
+}
+.rail-menu-note {
+  margin: 4px 4px 2px;
+  padding: 0 5px;
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  color: var(--text-dim);
+  white-space: normal;
+}
+
+/* ---- the working indicator ---------------------------------------------- */
+
+/*
+ * A workspace with an agent mid-run says so in the rail, so a grid of eight can
+ * be read without opening any of them.
+ *
+ * The shape is Eaon's own. The mark is a letter A drawn on a grid of rounded
+ * squares with a single cell lit; this is that grid with the light going round
+ * it, which is why it is squares on a grid and not the ring every other app
+ * uses. Small on purpose — at 11px it sits inside the icon's footprint and
+ * reads as a detail of the row rather than a thing bolted onto it.
+ *
+ * It wears --live, the same colour as the breathing dot on a pane header,
+ * because it means the same thing. Not --attention: amber in this app is
+ * reserved for "waiting on you", which is the opposite state and the one you
+ * are meant to act on.
+ */
+.ws-glyph {
+  position: relative;
+}
+
+/*
+ * The icon and the grid cross over rather than swapping.
+ *
+ * Blur is doing the real work: without it you see two distinct shapes overlap
+ * for 180ms and read it as two things trading places. Blurred, the eye takes it
+ * as one thing changing form.
+ */
+.ws-glyph > svg,
+.ws-pulse {
+  transition:
+    opacity 180ms var(--ease),
+    transform 180ms var(--ease),
+    filter 180ms var(--ease);
+}
+.ws-glyph[data-working='true'] > svg {
+  opacity: 0;
+  transform: scale(0.86);
+  filter: blur(2.5px);
+}
+
+.ws-pulse {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 12px;
+  height: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 1.2px;
+  opacity: 0;
+  /* Never from scale(0): nothing arrives from nothing, and at this size the
+     difference between 0 and 0.86 is the difference between a pop and a fade. */
+  transform: scale(0.86);
+  filter: blur(2.5px);
+  pointer-events: none;
+}
+.ws-glyph[data-working='true'] .ws-pulse {
+  opacity: 1;
+  transform: scale(1);
+  filter: blur(0);
+}
+
+.ws-pulse i {
+  display: block;
+  border-radius: 0.5px;
+  background: var(--live);
+  /* The unlit cells of the mark: dim, but plainly there. The grid has to read
+     as a grid, or the travelling light has nothing to travel across. */
+  opacity: 0.24;
+}
+
+/*
+ * The light goes round the eight outer cells, leaving the middle one dim.
+ *
+ * Negative delays rather than positive ones, so every cell is already mid-cycle
+ * on the first frame: a positive stagger would start with the whole grid dark
+ * and light up one cell at a time, which reads as loading rather than working.
+ *
+ * Only opacity animates. Nine elements moving would be nine elements the
+ * compositor has to think about on every frame of a rail that may have a dozen
+ * rows; nine fading is free.
+ */
+.ws-glyph[data-working='true'] .ws-pulse i {
+  animation: ws-pulse 900ms linear infinite;
+}
+/*
+ * Each cell is a step further round the ring, so the light is somewhere on it
+ * at every moment.
+ *
+ * Written with the full prefix on purpose. The `animation` shorthand above
+ * resets animation-delay, and it out-specifies a bare `.ws-pulse i:nth-child()`
+ * — which silently put all nine cells in phase and turned a travelling light
+ * into a grid blinking on and off together.
+ */
+.ws-glyph[data-working='true'] .ws-pulse i:nth-child(1) {
+  animation-delay: 0ms;
+}
+.ws-glyph[data-working='true'] .ws-pulse i:nth-child(2) {
+  animation-delay: -113ms;
+}
+.ws-glyph[data-working='true'] .ws-pulse i:nth-child(3) {
+  animation-delay: -225ms;
+}
+.ws-glyph[data-working='true'] .ws-pulse i:nth-child(6) {
+  animation-delay: -338ms;
+}
+.ws-glyph[data-working='true'] .ws-pulse i:nth-child(9) {
+  animation-delay: -450ms;
+}
+.ws-glyph[data-working='true'] .ws-pulse i:nth-child(8) {
+  animation-delay: -563ms;
+}
+.ws-glyph[data-working='true'] .ws-pulse i:nth-child(7) {
+  animation-delay: -675ms;
+}
+.ws-glyph[data-working='true'] .ws-pulse i:nth-child(4) {
+  animation-delay: -788ms;
+}
+/* The centre is the one cell the light never reaches. It holds the shape
+   together while everything around it moves. */
+.ws-glyph[data-working='true'] .ws-pulse i:nth-child(5) {
+  animation: none;
+  opacity: 0.24;
+}
+
+/*
+ * A comet, not a blink.
+ *
+ * Peaking for a moment and dropping straight back left one cell lit for 70ms
+ * out of 900 — at any instant the grid looked dead, and in motion it read as a
+ * flicker. Decaying over roughly a third of the cycle means the head is always
+ * trailed by two dimming cells, so there is a direction to see.
+ */
+@keyframes ws-pulse {
+  0% {
+    opacity: 1;
+  }
+  15% {
+    opacity: 0.55;
+  }
+  35%,
+  100% {
+    opacity: 0.24;
+  }
+}
+
+/*
+ * Reduced motion keeps the signal and drops the travel. The whole grid breathes
+ * together instead — the same breath a pane header already uses, so the meaning
+ * survives without anything moving across the screen.
+ */
+[data-reduce-motion='true'] .ws-glyph[data-working='true'] .ws-pulse i,
+[data-reduce-motion='true'] .ws-glyph[data-working='true'] .ws-pulse i:nth-child(5) {
+  animation: breathe 1.6s var(--ease) infinite;
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-glyph[data-working='true'] .ws-pulse i,
+  .ws-glyph[data-working='true'] .ws-pulse i:nth-child(5) {
+    animation: breathe 1.6s var(--ease) infinite;
+    opacity: 1;
+  }
+}
+
+/* ---- rows arriving ------------------------------------------------------ */
+
+/*
+ * A row that appears from nothing reads as a glitch. Four pixels and 200ms is
+ * enough to say "this arrived" without being something you wait for — and it
+ * doubles as the reveal when a folder is opened, since those rows mount then
+ * too.
+ */
+@keyframes ws-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.985);
+  }
+}
+.ws-item {
+  animation: ws-in 200ms var(--ease) both;
+}
+[data-reduce-motion='true'] .ws-item {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ws-item {
+    animation: none;
+  }
+}
+
+/* Softens the drop target lighting up, so a drag across the rail does not
+   strobe as the pointer crosses each folder. */
+.ws-folder {
+  transition:
+    background 150ms var(--ease),
+    box-shadow 150ms var(--ease);
 }

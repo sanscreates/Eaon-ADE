@@ -711,6 +711,31 @@ class TerminalRegistry {
     this.events?.onExit(paneId, code)
   }
 
+  /**
+   * Ends a pane's shell but keeps the pane.
+   *
+   * Unlike dispose(), the terminal and everything on it stay exactly where they
+   * were — the shell's exit comes back through the usual path and writes the
+   * same "session ended" line an agent quitting on its own would, so what is on
+   * screen is still readable and the pane can be started again.
+   */
+  stop(paneId: string): void {
+    /*
+     * Killed without first checking that this renderer has a terminal for the
+     * pane, because that check would have been wrong in exactly the case that
+     * matters. Shells live in the main process and outlive a reload, while a
+     * terminal is only created when its pane is first drawn — so a workspace
+     * you have not opened since launch has live shells and nothing here to find
+     * them by, and those are the ones most likely to be running forgotten.
+     *
+     * The shell's exit comes back through pty:exit and markExited() paints the
+     * pane, when there is a pane on screen to paint.
+     */
+    window.eaon.pty.kill(paneId)
+    const rt = this.panes.get(paneId)
+    if (rt) rt.spawned = false
+  }
+
   /** Called when a pane gets focus — clears a pending attention flag. */
   acknowledge(paneId: string): void {
     const rt = this.panes.get(paneId)

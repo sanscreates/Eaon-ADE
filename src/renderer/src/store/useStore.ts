@@ -18,6 +18,7 @@ import {
   type WorkspaceKind,
   type VaultNote,
   type Workspace,
+  type WorkspaceFolder,
   PANEL_LABEL
 } from '@shared/types'
 import type { DownloadProgress, InstalledModel, SttEngineState } from '@shared/stt'
@@ -58,6 +59,7 @@ interface AppState {
   agents: AgentDef[]
 
   workspaces: Workspace[]
+  folders: WorkspaceFolder[]
   activeWorkspaceId: string | null
   presets: Preset[]
   recents: RecentFolder[]
@@ -110,7 +112,18 @@ interface AppState {
 
   setActiveWorkspace: (id: string) => void
   closeWorkspace: (id: string) => void
+  /** Ends every shell in a workspace but keeps the workspace and its panes. */
+  stopWorkspace: (id: string) => void
   renameWorkspace: (id: string, name: string) => void
+
+  /** Makes a folder and returns its id, so the caller can file something in it. */
+  createFolder: (name?: string, withWorkspaceId?: string) => string
+  renameFolder: (id: string, name: string) => void
+  /** Removes the folder. Everything filed under it returns to the top level. */
+  deleteFolder: (id: string) => void
+  toggleFolder: (id: string) => void
+  /** Files a workspace under a folder, or back at the top level with null. */
+  moveToFolder: (workspaceId: string, folderId: string | null) => void
 
   addPane: (
     workspaceId: string,
@@ -185,6 +198,15 @@ function makePane(name: string, cwd: string, agentId: string): PaneSpec {
   }
 }
 
+/** "Folder", then "Folder 2" — the first one does not need a number. */
+function nextFolderName(existing: WorkspaceFolder[]): string {
+  const taken = new Set(existing.map((f) => f.name))
+  if (!taken.has('Folder')) return 'Folder'
+  for (let n = 2; ; n += 1) {
+    if (!taken.has(`Folder ${n}`)) return `Folder ${n}`
+  }
+}
+
 /** Workspaces cycle through the identity hues so the rail stays readable. */
 function nextHue(existing: Workspace[]): string {
   const counts = HUES.map((h) => existing.filter((w) => w.hue === h).length)
@@ -208,6 +230,7 @@ export const useStore = create<AppState>((set, get) => ({
   agents: AGENTS,
 
   workspaces: [],
+  folders: [],
   activeWorkspaceId: null,
   presets: [],
   recents: [],
@@ -262,11 +285,20 @@ export const useStore = create<AppState>((set, get) => ({
       savedSettings.lineHeight = DEFAULT_SETTINGS.lineHeight
     }
 
+    const folders = saved.folders ?? []
+    const folderIds = new Set(folders.map((f) => f.id))
+
     // Panes are restored as empty shells; their processes died with the app.
     const workspaces = (saved.workspaces ?? []).map((w) => ({
       ...w,
       // Saved before workspaces had kinds: everything back then held shells.
       kind: w.kind ?? ('terminals' as const),
+      /*
+       * A workspace filed under a folder that is no longer there comes back to
+       * the top level. Without this it would be filed somewhere unreachable and
+       * read as gone — the one way a folder could lose you a session.
+       */
+      folderId: w.folderId && folderIds.has(w.folderId) ? w.folderId : null,
       zoomedPaneId: null,
       panes: w.panes.map((p) => ({
         ...p,
@@ -291,6 +323,7 @@ export const useStore = create<AppState>((set, get) => ({
       appVersion: info.version,
       agents,
       workspaces,
+      folders,
       activeWorkspaceId: workspaces.some((w) => w.id === saved.activeWorkspaceId)
         ? saved.activeWorkspaceId
         : (workspaces[0]?.id ?? null),
@@ -348,6 +381,7 @@ export const useStore = create<AppState>((set, get) => ({
       const snapshot: PersistedState = {
         version: 1,
         workspaces: s.workspaces,
+        folders: s.folders,
         activeWorkspaceId: s.activeWorkspaceId,
         presets: s.presets,
         recents: s.recents,
@@ -398,6 +432,7 @@ export const useStore = create<AppState>((set, get) => ({
       panes: names.map((n) => makePane(n, draft.cwd, draft.agentId)),
       activePaneId: null,
       zoomedPaneId: null,
+      folderId: null,
       createdAt: Date.now()
     }
     workspace.activePaneId = workspace.panes[0]?.id ?? null
@@ -436,9 +471,96 @@ export const useStore = create<AppState>((set, get) => ({
     get().persist()
   },
 
+  /**
+   * Stop the agents, keep the workspace.
+   *
+   * The panes stay on screen showing where each one got to, which is the whole
+   * point: closing the workspace also stops everything, but takes the record of
+   * what happened with it. This is the version you reach for when you want the
+   * machine back and the transcripts still in front of you.
+   */
+  stopWorkspace(id) {
+    const target = get().workspaces.find((w) => w.id === id)
+    if (!target) return
+    // Marked here rather than waiting for each shell's exit to come back, so
+    // the rail stops claiming they are running the moment you ask.
+    target.panes.forEach((p) => {
+      terminals.stop(p.id)
+      forgetPane(p.id)
+    })
+  },
+
   renameWorkspace(id, name) {
+    const clean = name.trim()
+    // An empty name would leave a nameless row you could no longer identify or
+    // rename back, so a blank rename is simply not one.
+    if (!clean) return
     set({
-      workspaces: get().workspaces.map((w) => (w.id === id ? { ...w, name } : w))
+      workspaces: get().workspaces.map((w) => (w.id === id ? { ...w, name: clean } : w))
+    })
+    get().persist()
+  },
+
+  createFolder(name, withWorkspaceId) {
+    const s = get()
+    const folder: WorkspaceFolder = {
+      id: uid('f_'),
+      name: (name ?? '').trim() || nextFolderName(s.folders),
+      collapsed: false,
+      createdAt: Date.now()
+    }
+    set({
+      folders: [...s.folders, folder],
+      workspaces: withWorkspaceId
+        ? s.workspaces.map((w) => (w.id === withWorkspaceId ? { ...w, folderId: folder.id } : w))
+        : s.workspaces
+    })
+    get().persist()
+    return folder.id
+  },
+
+  renameFolder(id, name) {
+    const clean = name.trim()
+    if (!clean) return
+    set({ folders: get().folders.map((f) => (f.id === id ? { ...f, name: clean } : f)) })
+    get().persist()
+  },
+
+  /**
+   * Deleting a folder is only ever deleting the grouping.
+   *
+   * Everything inside comes back to the top level. A folder that could take
+   * four running agents with it would be a thing you hesitate before clicking,
+   * and there is nothing here worth hesitating over.
+   */
+  deleteFolder(id) {
+    const s = get()
+    set({
+      folders: s.folders.filter((f) => f.id !== id),
+      workspaces: s.workspaces.map((w) => (w.folderId === id ? { ...w, folderId: null } : w))
+    })
+    get().persist()
+  },
+
+  toggleFolder(id) {
+    set({
+      folders: get().folders.map((f) => (f.id === id ? { ...f, collapsed: !f.collapsed } : f))
+    })
+    get().persist()
+  },
+
+  moveToFolder(workspaceId, folderId) {
+    const s = get()
+    if (folderId && !s.folders.some((f) => f.id === folderId)) return
+    const target = s.workspaces.find((w) => w.id === workspaceId)
+    if (!target || target.folderId === folderId) return
+
+    set({
+      workspaces: s.workspaces.map((w) => (w.id === workspaceId ? { ...w, folderId } : w)),
+      // Dropping something into a folder that is shut would look like losing it.
+      folders: folderId
+        ? s.folders.map((f) => (f.id === folderId ? { ...f, collapsed: false } : f))
+        : s.folders
     })
     get().persist()
   },
@@ -482,6 +604,7 @@ export const useStore = create<AppState>((set, get) => ({
       panes,
       activePaneId: panes[0].id,
       zoomedPaneId: null,
+      folderId: null,
       createdAt: Date.now()
     }
     set({
@@ -634,6 +757,7 @@ export const useStore = create<AppState>((set, get) => ({
       panes: [],
       activePaneId: null,
       zoomedPaneId: null,
+      folderId: null,
       createdAt: Date.now()
     }
     set({

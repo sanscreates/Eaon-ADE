@@ -9,6 +9,7 @@ function emptyState(): PersistedState {
   return {
     version: STATE_VERSION,
     workspaces: [],
+    folders: [],
     activeWorkspaceId: null,
     presets: [],
     recents: [],

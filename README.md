@@ -156,6 +156,30 @@ have to close a panel to reach them. Each one is a single entry that follows the
 folder you opened it from and wears that project's colour; opening it again
 brings it forward instead of stacking up duplicates.
 
+**The rail is yours to arrange.** Right-click any workspace to rename it in
+place, file it away, stop its sessions, or close it. Rename is a field in the
+row itself, not a dialog — Return keeps it, Escape puts the old name back.
+
+**Folders in the rail.** Make one with the folder button beside `+`, then drag
+workspaces into it; drag one back onto the open space below to take it out
+again, or use the same right-click menu. Folders fold shut, remember that they
+were shut, and a shut one still tells you something inside it is running.
+Deleting a folder only deletes the grouping — everything inside returns to the
+top level and nothing stops.
+
+**Closing lives in the menu.** There is no × on the rows. It used to sit under
+the pointer on the way to every workspace you were only trying to switch to, and
+one slip ended however many agents were inside. The menu also has **Stop the
+sessions**, which ends the shells but keeps the workspace and its panes, so you
+get the machine back with the transcripts still in front of you.
+
+**A workspace tells you when it is working.** While an agent in it is producing
+output, its icon becomes a small grid of squares with a light travelling round
+them — Eaon's own mark in motion, since the mark is a letter A on a grid with
+one cell lit. It wears the same colour as the live dot on a pane header, so a
+rail of eight can be read at a glance without opening any of them. Turn on
+Reduce motion and the light stops travelling and breathes in place instead.
+
 **Drag a file onto a pane** — and its path is typed onto the prompt, escaped,
 exactly as dragging onto any terminal does. That is how you hand an agent a
 screenshot: drop it on the pane, say what to do with it, then send. An image
