@@ -21,7 +21,6 @@ export function TitleBar(): React.JSX.Element {
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
   const settingsOpen = useStore((s) => s.settingsOpen)
   const update = useStore((s) => s.update)
-  const dismissUpdate = useStore((s) => s.dismissUpdate)
   const openPanel = useStore((s) => s.openPanel)
   const notices = useStore((s) => s.notices)
   const clearNotices = useStore((s) => s.clearNotices)
@@ -119,19 +118,27 @@ export function TitleBar(): React.JSX.Element {
           {notices.length > 0 && <span className="badge-dot">{Math.min(notices.length, 99)}</span>}
         </button>
 
+        {/*
+          Settings, always — the dot is a notice, not a second button.
+
+          This used to re-show the update card while one was waiting, on the
+          reasoning that the card was the more useful thing to hand back. But
+          the condition it tested is not changed by pressing it, so the second
+          press did the same as the first and Settings could not be reached
+          from here at all until the update was installed. The update is not
+          lost by leaving: the dot says it is there, About says which version,
+          and Show brings the card back.
+        */}
         <button
           className="icon-btn has-badge"
           data-on={settingsOpen}
-          onClick={() => {
-            // Bringing the card back is the more useful action while an update
-            // is waiting; Settings is one click further on.
-            if (update.phase === 'ready') dismissUpdate(null)
-            else setSettingsOpen(!settingsOpen)
-          }}
+          onClick={() => setSettingsOpen(!settingsOpen)}
           title={
-            update.phase === 'ready' ? `Version ${update.version} is ready to install` : 'Settings'
+            update.phase === 'ready'
+              ? `Settings — version ${update.version} is ready to install`
+              : 'Settings'
           }
-          aria-label={update.phase === 'ready' ? 'Update ready' : 'Settings'}
+          aria-label="Settings"
         >
           <Settings2 size={15} />
           {update.phase === 'ready' && <span className="update-dot" />}
