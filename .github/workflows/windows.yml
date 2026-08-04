@@ -20,8 +20,14 @@ on:
   push:
     tags:
       - 'v*'
-    branches:
-      - windows-support
+
+# Re-pushing a tag, or moving one, should replace the build in flight rather
+# than race it. Grouped by ref so a tag run and a publishing dispatch — which
+# are different refs — can never cancel each other; only a run of the same ref
+# supersedes its predecessor.
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
