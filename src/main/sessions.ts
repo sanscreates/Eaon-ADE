@@ -79,9 +79,23 @@ export function projectSlug(cwd: string): string {
   return cwd.replace(/[^a-zA-Z0-9]/g, '-')
 }
 
-/** Where Claude Code keeps one directory of transcripts per project. */
+/**
+ * Where Claude Code keeps one directory of transcripts per project.
+ *
+ * Asked rather than computed, because it moves. Each signed-in account has its
+ * own configuration directory and therefore its own transcripts, so which ones
+ * count — for the usage readout, for the resume list, for knowing what a pane
+ * was running — depends on the account that is active. Answering from
+ * `~/.claude` regardless would show one account's work under another's name.
+ */
+let resolveProjectsRoot: () => string = () => path.join(os.homedir(), '.claude', 'projects')
+
+export function setProjectsRoot(fn: () => string): void {
+  resolveProjectsRoot = fn
+}
+
 export function projectsRoot(): string {
-  return path.join(os.homedir(), '.claude', 'projects')
+  return resolveProjectsRoot()
 }
 
 /**
@@ -131,7 +145,7 @@ export async function projectDirsFor(cwd: string): Promise<string[]> {
  * resumable with `claude --resume <id>`, so we can offer them back.
  */
 async function claudeSessions(limit: number): Promise<ResumableSession[]> {
-  const root = path.join(os.homedir(), '.claude', 'projects')
+  const root = projectsRoot()
   let projectDirs: string[]
   try {
     projectDirs = await fs.readdir(root)

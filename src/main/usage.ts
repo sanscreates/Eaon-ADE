@@ -3,6 +3,7 @@ import fsp from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import readline from 'node:readline'
+import { projectsRoot, setProjectsRoot } from './sessions'
 import {
   WINDOWS,
   billedOf,
@@ -57,8 +58,26 @@ const cursors = new Map<string, FileCursor>()
 /** Guards against two refreshes overlapping and counting the same bytes twice. */
 let running: Promise<UsageReport> | null = null
 
+/*
+ * Whose transcripts are being counted.
+ *
+ * The account that is active owns them. Reading `~/.claude` regardless would
+ * add a second account's spend to the first account's readout, which is the
+ * kind of wrong that looks plausible.
+ */
+let resolveCredentialsFile: () => string = () =>
+  path.join(os.homedir(), '.claude', '.credentials.json')
+
+export function setUsagePaths(paths: {
+  projects: () => string
+  credentials: () => string
+}): void {
+  setProjectsRoot(paths.projects)
+  resolveCredentialsFile = paths.credentials
+}
+
 function projectsDir(): string {
-  return path.join(os.homedir(), '.claude', 'projects')
+  return projectsRoot()
 }
 
 async function transcripts(): Promise<string[]> {
@@ -171,8 +190,7 @@ async function scanFile(file: string): Promise<void> {
 
 function readCredentials(): { plan: string; tier: string } {
   try {
-    const file = path.join(os.homedir(), '.claude', '.credentials.json')
-    const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+    const raw = JSON.parse(fs.readFileSync(resolveCredentialsFile(), 'utf8')) as {
       claudeAiOauth?: { subscriptionType?: string; rateLimitTier?: string }
     }
     // Only the plan name and tier are read. The tokens beside them are not touched
@@ -373,7 +391,7 @@ export async function anthropicUsage(): Promise<UsageReport> {
   let plan = ''
   let tier = ''
   try {
-    const file = path.join(os.homedir(), '.claude', '.credentials.json')
+    const file = resolveCredentialsFile()
     const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as {
       claudeAiOauth?: {
         accessToken?: string

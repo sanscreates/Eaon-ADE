@@ -13,6 +13,7 @@ import './styles/brain.css'
 import './styles/stats.css'
 import './styles/browser.css'
 import './styles/usage.css'
+import './styles/accounts.css'
 import { App } from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 

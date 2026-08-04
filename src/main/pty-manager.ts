@@ -188,7 +188,28 @@ export class PtyManager {
       env.LANG = 'en_US.UTF-8'
     }
 
+    /*
+     * Which Claude account this shell belongs to.
+     *
+     * Set only when an added account is the active one. Leaving it unset is not
+     * the same as pointing it at `~/.claude`: unset is what every other terminal
+     * on this machine does, and a pane that behaves identically to those is the
+     * point of never touching the original account.
+     */
+    const configDir = this.configDir()
+    if (configDir) env.CLAUDE_CONFIG_DIR = configDir
+
     return env
+  }
+
+  /**
+   * Where the active account keeps its configuration, asked at spawn time
+   * rather than held, so a pane started after a switch gets the new answer.
+   */
+  private configDir: () => string | null = () => null
+
+  setConfigDir(fn: () => string | null): void {
+    this.configDir = fn
   }
 
   spawn(req: SpawnRequest): { ok: boolean; error?: string } {

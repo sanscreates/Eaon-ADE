@@ -9,9 +9,11 @@ import * as fsapi from './fsapi'
 import * as git from './git'
 import { launchCommand, listResumable, sessionCountFor } from './sessions'
 import { PaneSessions } from './pane-sessions'
+import { Accounts } from './accounts'
+import { AccountLogin } from './account-login'
 import { SessionWatch } from './session-watch'
 import { collectStats } from './stats'
-import { anthropicUsage, localUsage, resetUsageCache } from './usage'
+import { anthropicUsage, localUsage, resetUsageCache, setUsagePaths } from './usage'
 import * as browser from './browser'
 import * as models from './stt/models'
 import * as speech from './speech'
@@ -30,6 +32,10 @@ let store: Store
 /** What each pane was last seen running, so it can be reopened. */
 let paneSessions: PaneSessions
 let sessionWatch: SessionWatch
+/** Signed-in Claude accounts, and which one new shells are given. */
+let accounts: Accounts
+/** At most one sign-in at a time; a second would race for the same directory. */
+let login: { id: string; flow: AccountLogin } | null = null
 const ptys = new PtyManager()
 const stt = new SttHost()
 const updater = new Updater()
@@ -271,6 +277,54 @@ function registerIpc(): void {
   ipcMain.on('pty:kill', (_e, paneId: string) => ptys.kill(paneId))
   ipcMain.handle('pty:alive', (_e, paneId: string) => ptys.has(paneId))
 
+  // ---- Claude accounts -------------------------------------------------
+  ipcMain.handle('accounts:list', () => accounts.list())
+
+  ipcMain.handle('accounts:setActive', (_e, id: string) => {
+    const next = accounts.setActive(id)
+    // The readout is built from a cache keyed by file, and the files it was
+    // reading belong to the account we just left.
+    resetUsageCache()
+    return next
+  })
+
+  ipcMain.handle('accounts:remove', (_e, id: string) => {
+    const next = accounts.remove(id)
+    resetUsageCache()
+    return next
+  })
+
+  /**
+   * Starts a sign-in against a directory of its own.
+   *
+   * Nothing is added to the list here. A directory only becomes an account once
+   * credentials actually appear in it, so an abandoned sign-in leaves an offer
+   * you could switch to but never use.
+   */
+  ipcMain.handle('accounts:beginLogin', () => {
+    login?.flow.cancel()
+    const { id, configDir } = accounts.reserve()
+    const flow = new AccountLogin(configDir, (ok) => {
+      if (ok) accounts.commit(id)
+      else accounts.discard(id)
+      const wc = mainWindow?.webContents
+      if (wc && !wc.isDestroyed()) wc.send('accounts:changed', accounts.list())
+    })
+    flow.onState((state) => {
+      const wc = mainWindow?.webContents
+      if (wc && !wc.isDestroyed()) wc.send('accounts:login', state)
+    })
+    login = { id, flow }
+    flow.start()
+    return flow.current()
+  })
+
+  ipcMain.on('accounts:submitCode', (_e, code: string) => login?.flow.submitCode(code))
+  ipcMain.on('accounts:cancelLogin', () => {
+    login?.flow.cancel()
+    login = null
+  })
+
   // ---- persisted state -------------------------------------------------
   ipcMain.handle('state:load', () => store.load())
   ipcMain.on('state:save', (_e, next: PersistedState) => store.save(next))
@@ -470,6 +524,14 @@ app.whenReady().then(() => {
   }
 
   store = new Store()
+  accounts = new Accounts()
+  // Every shell, the usage readout and the resume list all follow the account
+  // that is active, so none of them can show another account's work.
+  ptys.setConfigDir(() => accounts.activeConfigDir())
+  setUsagePaths({
+    projects: () => accounts.activeProjectsDir(),
+    credentials: () => accounts.activeCredentialsFile()
+  })
   paneSessions = new PaneSessions()
   // Watches for the agents nobody told the app about — the ones you start by
   // typing `claude` into a shell — so those panes come back too.
@@ -575,6 +637,7 @@ async function shutdownAndExit(): Promise<void> {
      */
     sessionWatch?.stop()
     paneSessions?.flush()
+    login?.flow.stop()
   } catch {
     /* nothing here is worth blocking a quit */
   }

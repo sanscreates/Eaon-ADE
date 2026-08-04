@@ -8,6 +8,7 @@ import type {
 import type { SpeechSupport, SystemVoice } from '../shared/speech'
 import type { UpdateState } from '../shared/update'
 import type { UsageReport } from '../shared/usage'
+import type { Account, LoginState } from '../shared/accounts'
 import type { Stats } from '../shared/stats'
 import type { BrainGraph, BrainStats, Memory, MemoryMeta, SearchHit } from '../shared/brain'
 import type {
@@ -129,6 +130,31 @@ const api = {
     read: (opts: { fromAnthropic: boolean; session: number; week: number }): Promise<UsageReport> =>
       ipcRenderer.invoke('usage:read', opts),
     forget: (): void => ipcRenderer.send('usage:forget')
+  },
+
+  /**
+   * Claude accounts. Signing in is Claude Code's own flow, driven in the main
+   * process; the window only ever asks to start it and hands back the code.
+   */
+  accounts: {
+    list: (): Promise<Account[]> => ipcRenderer.invoke('accounts:list'),
+    setActive: (id: string): Promise<Account[]> => ipcRenderer.invoke('accounts:setActive', id),
+    remove: (id: string): Promise<Account[]> => ipcRenderer.invoke('accounts:remove', id),
+
+    beginLogin: (): Promise<LoginState> => ipcRenderer.invoke('accounts:beginLogin'),
+    submitCode: (code: string): void => ipcRenderer.send('accounts:submitCode', code),
+    cancelLogin: (): void => ipcRenderer.send('accounts:cancelLogin'),
+
+    onLogin: (cb: (state: LoginState) => void): (() => void) => {
+      const handler = (_e: unknown, state: LoginState): void => cb(state)
+      ipcRenderer.on('accounts:login', handler)
+      return () => ipcRenderer.removeListener('accounts:login', handler)
+    },
+    onChanged: (cb: (list: Account[]) => void): (() => void) => {
+      const handler = (_e: unknown, list: Account[]): void => cb(list)
+      ipcRenderer.on('accounts:changed', handler)
+      return () => ipcRenderer.removeListener('accounts:changed', handler)
+    }
   },
 
   browser: {

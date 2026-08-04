@@ -1,0 +1,236 @@
+/*
+ * Claude accounts in Settings.
+ *
+ * A row per account, laid out the way an account switcher is everywhere else —
+ * mark, name, plan, and the state on the right — because that arrangement is
+ * the one nobody has to read twice. The whole row is the switch; the only
+ * separate control is removal, which is the one action worth making distinct.
+ */
+
+.account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.account {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-200);
+  background: var(--ink-100);
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+.account:hover {
+  border-color: var(--line-300);
+  background: var(--ink-200);
+}
+.account:focus-visible {
+  outline: none;
+  border-color: var(--accent-edge);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+/* The active one is not a hover state that got stuck, so it holds the accent. */
+.account[data-active='true'] {
+  border-color: var(--accent-edge);
+  background: var(--accent-wash);
+  cursor: default;
+}
+
+.account-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--line-200);
+  background: var(--ink-300);
+  color: var(--text-mid);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.account[data-active='true'] .account-mark {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--on-accent);
+}
+
+.account-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.account-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-hi);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-meta {
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+
+/* Says which account every other tool on the machine is already using. */
+.account-tag {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line-200);
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  font-weight: 400;
+}
+
+.account-on {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: var(--fs-micro);
+}
+/* Shown only on hover: every inactive row would otherwise shout "Switch". */
+.account-switch {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.account:hover .account-switch,
+.account:focus-visible .account-switch {
+  opacity: 1;
+}
+
+.account-confirm {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--danger);
+  background: var(--ink-100);
+  color: var(--text-mid);
+  font-size: var(--fs-sm);
+}
+.account-confirm > span {
+  flex: 1;
+}
+.account-confirm svg {
+  flex: 0 0 auto;
+  color: var(--danger);
+}
+
+.account-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* ---- the sign-in ---------------------------------------------------------- */
+
+.account-login {
+  margin-top: 14px;
+  padding: 13px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-200);
+  background: var(--ink-050);
+}
+
+.account-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-mid);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+.account-step svg {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
+.account-step[data-tone='good'] svg {
+  color: var(--accent);
+}
+.account-step[data-tone='bad'] svg {
+  color: var(--danger);
+}
+
+.account-code {
+  display: flex;
+  gap: 7px;
+  margin-top: 11px;
+}
+.account-code input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-200);
+  background: var(--ink-100);
+  color: var(--text-hi);
+  /* A pasted code is a string of characters to be checked, not read. */
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+}
+.account-code input:focus {
+  outline: none;
+  border-color: var(--accent-edge);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+.account-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+}
+.account-link:hover {
+  color: var(--text-mid);
+}
+
+/* The last thing Claude Code drew, when the flow was not recognised. */
+.account-output {
+  max-height: 190px;
+  margin: 11px 0 0;
+  padding: 9px 10px;
+  overflow: auto;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-100);
+  background: var(--ink-200);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.account-login-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}

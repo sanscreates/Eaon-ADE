@@ -10,6 +10,7 @@ import {
   Palette,
   Plus,
   Terminal,
+  UserRound,
   Volume2,
   X
 } from 'lucide-react'
@@ -21,6 +22,7 @@ import { ThemeCard } from './ThemeCard'
 import { VoicePanel } from './VoicePanel'
 import { SpeechPanel } from './SpeechPanel'
 import { UpdateSetting } from './UpdateSetting'
+import { AccountsPanel } from './AccountsPanel'
 import { UsageSettings } from './UsageSettings'
 
 type SectionId =
@@ -28,6 +30,7 @@ type SectionId =
   | 'terminal'
   | 'browser'
   | 'agents'
+  | 'accounts'
   | 'usage'
   | 'voice'
   | 'speech'
@@ -39,6 +42,7 @@ const SECTIONS: { id: SectionId; label: string; icon: typeof Palette }[] = [
   { id: 'terminal', label: 'Terminal', icon: Terminal },
   { id: 'browser', label: 'Browser', icon: Compass },
   { id: 'agents', label: 'Agents', icon: Bot },
+  { id: 'accounts', label: 'Accounts', icon: UserRound },
   { id: 'usage', label: 'Plan usage', icon: Gauge },
   { id: 'voice', label: 'Voice', icon: Mic },
   { id: 'speech', label: 'Spoken alerts', icon: Volume2 },
@@ -544,6 +548,8 @@ export function SettingsModal(): React.JSX.Element | null {
             {section === 'voice' && <VoicePanel />}
 
             {section === 'speech' && <SpeechPanel />}
+
+            {section === 'accounts' && <AccountsPanel />}
 
             {section === 'usage' && <UsageSettings />}
 
