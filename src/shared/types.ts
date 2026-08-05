@@ -34,6 +34,14 @@ export interface PaneSpec {
   /** Full command line that was launched, or null for a bare shell. */
   command: string | null
   status: PaneStatus
+  /**
+   * Whether something is running in this pane right now.
+   *
+   * Not the same as status === 'live', which only means bytes arrived — and
+   * bytes arrive on every keystroke you type into an agent's prompt. Derived
+   * from timing in terminals.ts; transient, like status.
+   */
+  working: boolean
   branch: string | null
   /** Context percentage parsed out of the agent's own status line. */
   contextPct: number | null

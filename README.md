@@ -173,12 +173,23 @@ one slip ended however many agents were inside. The menu also has **Stop the
 sessions**, which ends the shells but keeps the workspace and its panes, so you
 get the machine back with the transcripts still in front of you.
 
-**A workspace tells you when it is working.** While an agent in it is producing
-output, its icon becomes a small grid of squares with a light travelling round
-them — Eaon's own mark in motion, since the mark is a letter A on a grid with
-one cell lit. It wears the same colour as the live dot on a pane header, so a
-rail of eight can be read at a glance without opening any of them. Turn on
+**A workspace tells you when it is working.** While something is actually
+running in it, its icon becomes a small grid of squares with a light travelling
+round them — Eaon's own mark in motion, since the mark is a letter A on a grid
+with one cell lit. It wears the same colour as the live dot on a pane header, so
+a rail of eight can be read at a glance without opening any of them. Turn on
 Reduce motion and the light stops travelling and breathes in place instead.
+
+"Actually running" is narrower than "bytes arrived", and deliberately. A CLI
+agent redraws its whole prompt box on every keystroke, and repaints itself every
+few seconds while sitting at rest — so anything keyed off raw output flickers
+while you type and blinks at you when you are doing nothing. Two things have to
+be true instead: the output has to have kept coming for a moment after the last
+thing *you* sent, and it has to be a run of output rather than one isolated
+burst. Measured against a real agent, that separates cleanly — while answering
+it emitted every 110ms and never paused longer than 445ms, while at rest it
+emitted once every ten seconds. Once it is lit, typing a follow-up does not put
+it out; only the output stopping does.
 
 **Drag a file onto a pane** — and its path is typed onto the prompt, escaped,
 exactly as dragging onto any terminal does. That is how you hand an agent a
@@ -469,6 +480,12 @@ shell, anything you genuinely set in your own profile comes straight back.
 - **Speech models are a download, not a bundle.** Dictation does nothing until
   you have chosen one — the first press sends you to Settings rather than
   guessing on your behalf and spending 42 MB of someone's tethered connection.
+- **The working indicator reads output, so a silent command is invisible to
+  it.** `sleep 30` and a build that prints nothing until it finishes are running
+  by any sensible definition and show nothing in the rail, because from outside
+  the pane they are indistinguishable from an empty prompt. Everything that
+  prints as it goes — every agent in the picker, and near enough every build
+  tool — shows up.
 - **Spoken alerts sound as good as your Mac's voices, and no better.** The
   synthesiser is the operating system's, which is what keeps the feature to one
   short-lived process instead of a neural model resident in memory — but a stock

@@ -67,9 +67,10 @@ export function App(): React.JSX.Element {
           })
         },
         onContext: (paneId, contextPct) => store().patchPane(paneId, { contextPct }),
+        onWorking: (paneId, working) => store().patchPane(paneId, { working }),
         onExit: (paneId, code) => {
           const s = store()
-          s.patchPane(paneId, { status: 'exited' })
+          s.patchPane(paneId, { status: 'exited', working: false })
           const ws = s.workspaces.find((w) => w.panes.some((p) => p.id === paneId))
           const pane = ws?.panes.find((p) => p.id === paneId)
           if (pane && code !== 0) {

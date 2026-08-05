@@ -201,6 +201,8 @@ export interface TerminalEvents {
   onExit: (paneId: string, code: number) => void
   /** An agent worked for a while and then went quiet. `runMs` is how long. */
   onFinished: (paneId: string, runMs: number) => void
+  /** Something started or stopped running in this pane. */
+  onWorking: (paneId: string, working: boolean) => void
 }
 
 interface Runtime {
@@ -217,10 +219,20 @@ interface Runtime {
   lastData: number
   /** When this pane last went from quiet to producing output. */
   busySince: number
+  /**
+   * When the current unbroken run of output began.
+   *
+   * Not busySince, which only resets after IDLE_MS of quiet and so would treat
+   * a box repainting every second as one continuous stream. This resets on any
+   * gap worth calling a gap.
+   */
+  streakSince: number
   /** When bytes were last sent *to* the shell, from a key, a paste or a broadcast. */
   lastInput: number
   /** When the shell under this pane was started. */
   spawnedAt: number
+  /** Whether something is currently running in here. See looksWorking(). */
+  working: boolean
   status: PaneStatus
   /** Rolling plain-text tail used for status-line parsing. */
   tail: string
@@ -261,6 +273,100 @@ const MIN_RUN_MS = 4000
  * pane you just opened, so there is nothing to announce.
  */
 const SETTLE_MS = 12000
+
+/**
+ * How long output must keep arriving after your last keystroke before the pane
+ * counts as working.
+ *
+ * `status === 'live'` cannot answer this. It means "bytes arrived", and bytes
+ * arrive when a CLI agent redraws its prompt box in response to a keypress —
+ * which is every keypress. Anything keyed off it lights up while you type.
+ *
+ * The separation is that a keystroke produces one short burst and then stops,
+ * while a running command produces output that keeps coming on its own. So the
+ * measure is the gap between the last thing you sent and the last thing that
+ * came back: near zero the whole time you are typing, and growing steadily once
+ * something is actually running.
+ *
+ * Shorter than MIN_RUN_MS above because the two questions are different. That
+ * one asks, after the fact, whether a run was substantial enough to announce
+ * out loud. This one asks whether something is happening right now, and wants
+ * to say so while it still matters.
+ */
+const WORK_GRACE_MS = 900
+
+/**
+ * A pause longer than this ends the current run of output.
+ *
+ * Measured against a real Claude Code pane: a running command emitted a chunk
+ * roughly every 110ms, while the prompt box sitting untouched emitted a single
+ * chunk about every ten seconds. Six hundred sits far enough above the first and
+ * far enough below the second that neither is a close call.
+ */
+const STREAM_GAP_MS = 600
+
+/**
+ * How long output must have been arriving *continuously* before it counts.
+ *
+ * This is the half that the gap-since-your-last-keystroke rule cannot do. An
+ * agent's prompt box repaints on its own every few seconds — a tip rotating, a
+ * clock ticking — and each of those repaints is, by every timing measure,
+ * output that arrived long after you last typed. Requiring a run of output
+ * rather than a single burst is what separates a thing that is working from a
+ * thing that is merely redrawing itself.
+ *
+ * Volume cannot do it either, and is worth recording so nobody tries: the idle
+ * box measured 15 bytes a second and a genuinely busy shell measured 9, because
+ * a repaint carries a whole box and a running command carries one character.
+ */
+const WORK_STREAK_MS = 700
+
+/**
+ * How long output must stop before the pane stops counting as working.
+ *
+ * Longer than a spinner's redraw interval, so a command that pauses briefly —
+ * an agent waiting on a tool, a build between steps — does not strobe the
+ * indicator off and on.
+ */
+const WORK_IDLE_MS = 1500
+
+/** What the working judgement is made from. */
+export interface WorkTimings {
+  now: number
+  /** When output last arrived. */
+  lastData: number
+  /** When the current unbroken run of output began. */
+  streakSince: number
+  /** When bytes were last sent to the shell. */
+  lastInput: number
+  /** When the shell was started, or 0 if it never was. */
+  spawnedAt: number
+  /** Whether the pane is already counted as working. */
+  working: boolean
+}
+
+/**
+ * Whether something is running in this pane right now.
+ *
+ * Deliberately asymmetric. Starting requires output that outlived your typing;
+ * stopping only requires output to stop. Without that, typing a follow-up while
+ * an agent is still working would drop the indicator and bring it back a moment
+ * later, and a flicker in the corner of your eye is worse than no indicator at
+ * all.
+ */
+export function looksWorking(t: WorkTimings): boolean {
+  if (t.spawnedAt <= 0) return false
+  // Whatever else is true, output has to still be arriving.
+  if (t.now - t.lastData >= WORK_IDLE_MS) return false
+  if (t.working) return true
+  // Output has to have been coming for a while, not just once — otherwise a
+  // prompt box redrawing itself on a timer reads as a running command.
+  if (t.lastData - t.streakSince < WORK_STREAK_MS) return false
+  // And it has to have outlived your typing. Time from the last thing you sent
+  // to the last thing that came back; a shell that has never been typed into is
+  // measured from when it started.
+  return t.lastData - Math.max(t.lastInput, t.spawnedAt) >= WORK_GRACE_MS
+}
 
 /** The timestamps the judgement below is made from. */
 export interface RunTimings {
@@ -369,6 +475,19 @@ class TerminalRegistry {
         }
         if (looksFinished(timings)) this.events?.onFinished(id, runMs)
       }
+
+      const working = looksWorking({
+        now,
+        lastData: rt.lastData,
+        streakSince: rt.streakSince,
+        lastInput: rt.lastInput,
+        spawnedAt: rt.spawnedAt,
+        working: rt.working
+      })
+      if (working !== rt.working) {
+        rt.working = working
+        this.events?.onWorking(id, working)
+      }
     }
   }
 
@@ -426,8 +545,10 @@ class TerminalRegistry {
       fitTimer: null,
       lastData: 0,
       busySince: 0,
+      streakSince: 0,
       lastInput: 0,
       spawnedAt: 0,
+      working: false,
       status: 'idle',
       tail: '',
       pending: [],
@@ -685,7 +806,11 @@ class TerminalRegistry {
     const rt = this.panes.get(paneId)
     if (!rt) return
     rt.term.write(data)
-    rt.lastData = Date.now()
+    const at = Date.now()
+    // A long enough silence means whatever comes next is a new run of output,
+    // not a continuation of the last one.
+    if (at - rt.lastData > STREAM_GAP_MS) rt.streakSince = at
+    rt.lastData = at
 
     if (rt.status !== 'live') {
       rt.busySince = rt.lastData
@@ -706,6 +831,12 @@ class TerminalRegistry {
     const rt = this.panes.get(paneId)
     if (!rt) return
     rt.spawned = false
+    // A shell that has gone is running nothing, and the ticker would otherwise
+    // take a beat to notice.
+    if (rt.working) {
+      rt.working = false
+      this.events?.onWorking(paneId, false)
+    }
     rt.status = 'exited'
     rt.term.writeln(`\r\n  [session ended, exit ${code}]`)
     this.events?.onExit(paneId, code)

@@ -192,6 +192,7 @@ function makePane(name: string, cwd: string, agentId: string): PaneSpec {
     // makes a pane come back as the conversation it was rather than a new one.
     sessionId: agentKeepsSessions(agentId) ? crypto.randomUUID() : null,
     status: 'idle',
+    working: false,
     branch: null,
     contextPct: null,
     createdAt: Date.now()
@@ -303,6 +304,7 @@ export const useStore = create<AppState>((set, get) => ({
       panes: w.panes.map((p) => ({
         ...p,
         status: 'idle' as PaneStatus,
+        working: false,
         contextPct: null,
         title: null,
         /*
@@ -669,7 +671,7 @@ export const useStore = create<AppState>((set, get) => ({
     const s = get()
     const pane = s.workspaces.flatMap((w) => w.panes).find((p) => p.id === paneId)
     if (!pane) return
-    get().patchPane(paneId, { status: 'idle', contextPct: null, title: null })
+    get().patchPane(paneId, { status: 'idle', working: false, contextPct: null, title: null })
     // The registry does the swap: the pane component mounted once and will not
     // mount again, so it cannot re-attach the replacement terminal itself.
     terminals.restart(

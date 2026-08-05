@@ -204,7 +204,8 @@ export function WorkspaceRail(): React.JSX.Element {
     const attention = notices.filter((n) => n.workspaceId === w.id && n.kind === 'attention')
     const panel = w.kind !== 'terminals'
     const renaming = editing?.kind === 'workspace' && editing.id === w.id
-    const working = !panel && w.panes.some((p) => p.status === 'live')
+    // p.working, not p.status === 'live': the latter is true while you type.
+    const working = !panel && w.panes.some((p) => p.working)
 
     return (
       <button
@@ -268,7 +269,7 @@ export function WorkspaceRail(): React.JSX.Element {
     const renaming = editing?.kind === 'folder' && editing.id === f.id
     const Icon = f.collapsed ? Folder : FolderOpen
     // Folded shut, this is the only thing that says work is going on in there.
-    const working = inside.some((w) => w.panes.some((p) => p.status === 'live'))
+    const working = inside.some((w) => w.panes.some((p) => p.working))
 
     /* The whole group is the drop target, not just its header row — aiming at a
        28px strip to file something away is a worse gesture than aiming at the
