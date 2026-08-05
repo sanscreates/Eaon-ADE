@@ -99,6 +99,16 @@ export function projectsRoot(): string {
 }
 
 /**
+ * Where Claude Code notes which conversation each running process is holding.
+ *
+ * Beside the transcripts rather than beside the home directory, so it follows
+ * whichever account is active for the same reason they do.
+ */
+export function sessionsRoot(): string {
+  return path.join(path.dirname(projectsRoot()), 'sessions')
+}
+
+/**
  * The project directories holding a folder's transcripts.
  *
  * The directory name is derived from the path, so normally one string

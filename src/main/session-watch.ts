@@ -1,9 +1,10 @@
 import { execFile } from 'node:child_process'
 import fs from 'node:fs/promises'
+import fsSync from 'node:fs'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { AGENTS, SESSION_FLAGS } from '../shared/types'
-import { projectSlug, projectsRoot } from './sessions'
+import { projectSlug, projectsRoot, sessionsRoot } from './sessions'
 import type { PaneSessions } from './pane-sessions'
 
 const exec = promisify(execFile)
@@ -24,20 +25,22 @@ const exec = promisify(execFile)
  * pane's shell carries cannot be read back out of the agent beneath it. What
  * the app does have is the pane's own shell: it spawned it and knows its pid.
  * So the agent is found by walking down from there, and the conversation is
- * identified in one of two ways, in this order of confidence:
+ * identified in one of three ways, in this order of confidence:
  *
- *   1. The command line names it. Anything the app launched says `--resume` or
- *      `--session-id`, and so does anything resumed by hand. This is exact.
- *   2. A transcript appears that was not there when the agent started. This
- *      covers a bare `claude`, and it is exact for one agent per folder.
+ *   1. The agent says so. Claude Code writes `sessions/<pid>.json` under its
+ *      configuration directory naming the conversation that process holds.
+ *      Written by the process about itself, so it is exact.
+ *   2. The command line names it — `--resume` or `--session-id`.
+ *   3. A transcript appears that was not there when the agent started.
  *
- * The second is a guess only when two panes in the same folder both start an
- * agent and neither has spoken yet, and the tie is broken toward whichever
- * started most recently — a transcript is written the first time you speak, and
- * speaking tends to follow starting closely. It can be wrong, and the cost of
- * being wrong is two panes in one folder swapping conversations, both of them
- * still there. It is self-correcting: once a pane is restored the app launches
- * that session by name, so from then on it is answered by the first rule.
+ * The third came first and was, on its own, wrong about the case that matters
+ * most. It can only recognise a conversation that *begins* while something is
+ * watching, and the sessions people actually want back are the ones that have
+ * been running for hours: their transcripts were already on disk before the app
+ * opened, so no arrival ever came and eleven panes out of fifteen were restored
+ * as bare shells. Asking the agent which conversation it is holding answers
+ * that outright, and answers it the moment the pane is seen rather than only
+ * when somebody next speaks. The other two remain as fallbacks.
  */
 
 /** How often the process table is read. Cheap enough; one `ps` for every pane. */
@@ -147,6 +150,33 @@ async function cwdOf(pid: number): Promise<string> {
   }
 }
 
+/**
+ * The conversation a running agent says it is holding.
+ *
+ * Claude Code keeps `sessions/<pid>.json` beside its transcripts, naming the
+ * session, the folder and the process. It is written by the process about
+ * itself, so it is exact, and it is there for the whole life of the session
+ * rather than only at the moment one begins — which is what makes an agent that
+ * was already mid-conversation identifiable at all.
+ *
+ * The recorded folder is checked against the folder the process is actually in.
+ * A process id is reused eventually, and a file left behind by a dead agent
+ * would otherwise hand a pane somebody else's conversation.
+ */
+export function sessionForPid(pid: number, cwd: string): { sessionId: string; cwd: string } | null {
+  let row: { sessionId?: string; cwd?: string; pid?: number }
+  try {
+    row = JSON.parse(fsSync.readFileSync(path.join(sessionsRoot(), `${pid}.json`), 'utf8'))
+  } catch {
+    return null
+  }
+  if (!row?.sessionId || !/^[0-9a-fA-F-]{36}$/.test(row.sessionId)) return null
+  if (typeof row.pid === 'number' && row.pid !== pid) return null
+  // When the folder is known and disagrees, the file belongs to a different run.
+  if (cwd && row.cwd && row.cwd !== cwd) return null
+  return { sessionId: row.sessionId, cwd: row.cwd ?? cwd }
+}
+
 /** Every conversation filed under a folder, with when it was first written. */
 async function transcriptsIn(cwd: string): Promise<Map<string, number>> {
   const out = new Map<string, number>()
@@ -253,6 +283,28 @@ export class SessionWatch {
         }
         if (w.settled || !w.agentId) continue
 
+        /*
+         * What the agent says about itself, which beats anything inferred.
+         *
+         * Claude Code writes `sessions/<pid>.json` under its configuration
+         * directory naming the conversation that process is holding. That
+         * answers the question outright, and — the reason this exists — it
+         * answers it for an agent that was already talking before anyone
+         * started watching. Waiting for a transcript to appear can never
+         * identify one of those: its transcript was already there.
+         */
+        const own = sessionForPid(proc.pid, w.cwd)
+        if (own) {
+          w.settled = true
+          this.store.set(paneId, {
+            agentId: w.agentId,
+            sessionId: own.sessionId,
+            cwd: own.cwd || w.cwd
+          })
+          continue
+        }
+
+        // Failing that, a command line that names the conversation.
         const named = ID_RE.exec(proc.args)?.[1]
         if (named) {
           w.settled = true
