@@ -296,9 +296,19 @@ it is not. Settings lists the full keymap for whichever platform you are on.
 
 ### Which installer
 
-Releases carry an installer per architecture. `x64` is what almost everyone
-wants; `arm64` is for Windows on ARM; `ia32` is 32-bit, for old Windows 10 x86
-installs — Windows 11 has no 32-bit edition at all.
+Releases carry an installer per architecture, named the way Electron names
+them rather than the way a CPU is usually advertised:
+
+| File | CPU | Who |
+|---|---|---|
+| `…-x64-setup.exe` | x86-64, also called AMD64 or "64-bit" | almost everyone, Intel or AMD |
+| `…-arm64-setup.exe` | ARM64 | Windows on ARM, Snapdragon |
+| `…-ia32-setup.exe` | x86, 32-bit | old Windows 10 x86 installs |
+| `…-setup.exe` | all three in one | if you would rather not choose |
+
+If you have an Intel or AMD desktop or laptop, **`x64` is the one** — `x64`,
+`x86-64` and `AMD64` are three names for the same architecture. Windows 11 has
+no 32-bit edition at all, so `ia32` is only for old machines.
 
 One thing is missing from the 32-bit build and cannot be added: **voice
 dictation does not work there.** ONNX Runtime, which runs the speech model,
@@ -314,7 +324,11 @@ On Windows, `npm run dist:mac`'s counterpart is:
 npm run dist:win        # NSIS installer and a zip, x64 and arm64
 ```
 
-The same command cross-builds from macOS. Two of the three native dependencies
+The same command cross-builds from macOS, for x64 and arm64. It skips ia32
+there and says so: node-pty publishes no 32-bit Windows prebuild and node-gyp
+cannot compile one for another platform, so a 32-bit build made on a Mac would
+install, open a window, and fail to start a single pane. The workflow builds
+that one on Windows, where it is compiled properly, and tests it. Two of the three native dependencies
 ship every platform's binaries in one package, so they need no help; sharp does
 not, and `npm run deps:win` fetches its Windows binaries first — `dist:win`
 runs it for you. The cross-build skips the native rebuild step, because
