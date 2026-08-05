@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, nativeTheme } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, nativeTheme, screen } from 'electron'
 import { execFile } from 'node:child_process'
 import os from 'node:os'
 import path from 'node:path'
@@ -84,11 +84,36 @@ function createWindow(): BrowserWindow {
   // flash the wrong colour before the renderer boots.
   const theme = getTheme(store?.load().settings.themeId)
 
+  /*
+   * A window that fits the screen it opens on.
+   *
+   * These numbers are sizes in device-independent pixels, which is not the same
+   * as the pixels a display advertises. A 1920x1080 laptop at the 150% scaling
+   * Windows picks by default has a work area of 1280x720 in these units, so a
+   * fixed 1560x980 window is larger than the whole screen — the app opens with
+   * its edges past the desktop and parts of it cannot be reached. The same is
+   * true of any 1366x768 machine at 100%.
+   *
+   * So the preferred size is a ceiling rather than a promise, and the floor has
+   * to bend too: a minimum of 900x620 on a screen smaller than that would stop
+   * the window ever being sized down to fit.
+   */
+  const MAC = process.platform === 'darwin'
+  // Enough of a margin that it reads as a window rather than a takeover.
+  const MARGIN = 80
+  const { workAreaSize } = screen.getPrimaryDisplay()
+
+  // Left as it was on macOS, where nobody has reported it opening off-screen.
+  const minWidth = MAC ? 900 : Math.min(900, workAreaSize.width)
+  const minHeight = MAC ? 620 : Math.min(620, workAreaSize.height)
+  const width = MAC ? 1560 : Math.max(minWidth, Math.min(1560, workAreaSize.width - MARGIN))
+  const height = MAC ? 980 : Math.max(minHeight, Math.min(980, workAreaSize.height - MARGIN))
+
   const win = new BrowserWindow({
-    width: 1560,
-    height: 980,
-    minWidth: 900,
-    minHeight: 620,
+    width,
+    height,
+    minWidth,
+    minHeight,
     show: false,
     backgroundColor: theme.tokens.ink000,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',

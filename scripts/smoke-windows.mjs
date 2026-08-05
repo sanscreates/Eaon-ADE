@@ -203,6 +203,52 @@ check('bare Ctrl+D is left to the shell', keys?.ctrlDTaken === false, keys)
 check('Ctrl+Shift+K is taken by the app', keys?.ctrlShiftKTaken === true, keys)
 check('Ctrl+Shift+K opened the commands', keys?.overlay === true, keys)
 
+// The window has to fit the screen it opened on, and the title bar has to
+// leave room for the controls Windows draws over it. Both were wrong: a fixed
+// 1560x980 window is larger than a 1920x1080 laptop's work area at the 150%
+// scaling Windows picks by default, and the app's own buttons sat underneath
+// the minimise/maximise/close overlay where they could not be clicked.
+const fit = await evaluate(`
+  new Promise((resolve) => {
+    const bar = document.querySelector('.titlebar')
+    const styles = bar ? getComputedStyle(bar) : null
+    const wco = navigator.windowControlsOverlay
+    const rect = wco && wco.visible ? wco.getTitlebarAreaRect() : null
+    resolve({
+      screenW: window.screen.availWidth,
+      screenH: window.screen.availHeight,
+      outerW: window.outerWidth,
+      outerH: window.outerHeight,
+      padRight: styles ? parseInt(styles.paddingRight, 10) : null,
+      overlayVisible: Boolean(wco && wco.visible),
+      controlsWidth: rect ? Math.round(window.innerWidth - (rect.x + rect.width)) : null,
+      actionsRight: (() => {
+        const a = document.querySelector('.titlebar-actions')
+        if (!a) return null
+        const r = a.getBoundingClientRect()
+        return Math.round(window.innerWidth - r.right)
+      })()
+    })
+  })
+`)
+
+check(
+  'the window fits the screen it opened on',
+  fit && fit.outerW <= fit.screenW && fit.outerH <= fit.screenH,
+  fit && `window ${fit.outerW}x${fit.outerH} vs screen ${fit.screenW}x${fit.screenH}`
+)
+check('the window controls overlay is reported', fit?.overlayVisible === true, fit)
+check(
+  'the title bar leaves room for the window controls',
+  fit && fit.controlsWidth > 0 && fit.padRight >= fit.controlsWidth,
+  fit && `padding-right ${fit.padRight} for controls ${fit.controlsWidth}`
+)
+check(
+  'the app buttons clear the window controls',
+  fit && fit.actionsRight !== null && fit.actionsRight >= fit.controlsWidth,
+  fit && `actions end ${fit.actionsRight}px from the edge, controls take ${fit.controlsWidth}px`
+)
+
 const title = await evaluate(`document.title || document.querySelector('.wordmark')?.textContent || ''`)
 check('the window identifies itself', typeof title === 'string' && title.length > 0, title)
 

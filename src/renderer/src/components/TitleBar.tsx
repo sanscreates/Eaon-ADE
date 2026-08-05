@@ -43,10 +43,76 @@ export function TitleBar(): React.JSX.Element {
     return () => document.removeEventListener('mousedown', onDown)
   }, [menuOpen])
 
-  const padLeft = fullscreen || navigator.platform.toLowerCase().indexOf('mac') === -1 ? 12 : 88
+  /*
+   * Room for whichever window controls this platform draws over the page.
+   *
+   * macOS puts its three lights at the left, which is what the 88 is for.
+   * Windows and Linux put minimise, maximise and close at the *right*, drawn on
+   * top of the page by the title bar overlay — so without a matching gap on
+   * that side the app's own buttons sit underneath them: invisible, and
+   * unclickable, because the overlay takes the pointer first.
+   *
+   * The width of those controls is not ours to guess. The overlay reports the
+   * strip it left us, and it changes when the window is maximised or the
+   * language is right-to-left, so it is read rather than assumed.
+   */
+  const isMacOS = navigator.platform.toLowerCase().includes('mac')
+
+  /*
+   * Chromium exposes windowControlsOverlay on macOS as well, where this app
+   * does not use one — it uses hiddenInset and the three lights sit in the
+   * page's top-left. Reading the overlay there reports a strip the full width
+   * of the window, which works out to no left gap at all and puts the sidebar
+   * button underneath the close button. So this is asked for only on the
+   * platforms that actually draw an overlay.
+   */
+  const overlay = isMacOS
+    ? undefined
+    : (
+        navigator as Navigator & {
+          windowControlsOverlay?: {
+            getTitlebarAreaRect(): DOMRect
+            addEventListener(type: 'geometrychange', fn: () => void): void
+            removeEventListener(type: 'geometrychange', fn: () => void): void
+          }
+        }
+      ).windowControlsOverlay
+  const [pad, setPad] = useState({ left: 12, right: 12 })
+
+  useEffect(() => {
+    if (!overlay) return
+    const measure = (): void => {
+      const rect = overlay.getTitlebarAreaRect()
+      // A zero-width rect means the overlay is hidden — full screen, say — and
+      // there is nothing to leave room for.
+      if (!rect || rect.width === 0) return setPad({ left: 12, right: 12 })
+      setPad({
+        left: Math.max(12, Math.round(rect.x)),
+        right: Math.max(12, Math.round(window.innerWidth - (rect.x + rect.width)))
+      })
+    }
+    measure()
+    overlay.addEventListener('geometrychange', measure)
+    window.addEventListener('resize', measure)
+    return () => {
+      overlay.removeEventListener('geometrychange', measure)
+      window.removeEventListener('resize', measure)
+    }
+  }, [overlay])
+
+  // macOS keeps exactly what it had: room for the traffic lights, unless full
+  // screen has taken them away.
+  const padLeft = isMacOS ? (fullscreen ? 12 : 88) : overlay ? pad.left : 12
+  const padRight = isMacOS ? 12 : overlay ? pad.right : 12
 
   return (
-    <header className="titlebar" style={{ ['--titlebar-pad-left' as string]: `${padLeft}px` }}>
+    <header
+      className="titlebar"
+      style={{
+        ['--titlebar-pad-left' as string]: `${padLeft}px`,
+        ['--titlebar-pad-right' as string]: `${padRight}px`
+      }}
+    >
       <button
         className="icon-btn"
         onClick={toggleRail}

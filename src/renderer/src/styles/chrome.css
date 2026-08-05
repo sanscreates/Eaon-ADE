@@ -15,7 +15,7 @@
   gap: 10px;
   flex: 0 0 var(--titlebar-h);
   height: var(--titlebar-h);
-  padding: 0 12px 0 var(--titlebar-pad-left, 88px);
+  padding: 0 var(--titlebar-pad-right, 12px) 0 var(--titlebar-pad-left, 88px);
   background: var(--ink-100);
   border-bottom: 1px solid var(--line-100);
   -webkit-app-region: drag;
