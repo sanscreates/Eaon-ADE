@@ -13,13 +13,106 @@
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
-  grid-auto-rows: minmax(0, 1fr);
-  gap: 6px;
   height: 100%;
 }
+/*
+ * No `gap`. The space between panes is a track of its own, holding the divider
+ * you drag — which is what keeps the divider exactly on the seam without
+ * anything having to measure where the seam is.
+ */
 .grid[data-zoomed='true'] {
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+/* ---- dividers ---------------------------------------------------------- */
+
+/*
+ * The seam between two panes.
+ *
+ * Invisible until it is worth noticing. The grid already reads as separated —
+ * every pane has its own border — so a line drawn down the middle of the gap
+ * would be a second border saying the same thing. What the seam adds is a
+ * larger place to aim at than the six pixels it occupies, which is why it
+ * reaches past its own track.
+ */
+.pane-seam {
+  position: relative;
+  z-index: 2;
+}
+.pane-seam[data-axis='cols'] {
+  cursor: col-resize;
+}
+.pane-seam[data-axis='rows'] {
+  cursor: row-resize;
+}
+
+/* The part you can actually hit: wider than the seam, centred on it. */
+.pane-seam::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+.pane-seam[data-axis='cols']::before {
+  left: -3px;
+  right: -3px;
+}
+.pane-seam[data-axis='rows']::before {
+  top: -3px;
+  bottom: -3px;
+}
+
+/* And the part you can see, which only appears once you are on it. */
+.pane-seam::after {
+  content: '';
+  position: absolute;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.pane-seam[data-axis='cols']::after {
+  top: 22%;
+  bottom: 22%;
+  left: 2px;
+  right: 2px;
+}
+.pane-seam[data-axis='rows']::after {
+  left: 22%;
+  right: 22%;
+  top: 2px;
+  bottom: 2px;
+}
+.pane-seam:hover::after,
+.pane-seam[data-dragging='true']::after {
+  opacity: 1;
+}
+
+/* While a divider is moving, the pointer belongs to it and nothing else. */
+.grid[data-dragging='true'] {
+  user-select: none;
+}
+.grid[data-dragging='true'] .pane-term {
+  pointer-events: none;
+}
+
+/* ---- carrying a pane --------------------------------------------------- */
+
+/* The one being carried stays where it is, lightened, so the grid does not
+   rearrange itself under the pointer mid-drag. */
+.pane[data-carrying='true'] {
+  opacity: 0.4;
+}
+/* The one it would trade places with. */
+.pane[data-over='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-edge), 0 0 28px -12px var(--accent);
+}
+.pane-head {
+  cursor: grab;
+}
+.grid[data-carrying='true'] .pane-head {
+  cursor: grabbing;
 }
 
 /* ---- pane ------------------------------------------------------------- */
@@ -448,4 +541,14 @@
 
 .pane[data-dropping='true'] .pane-head {
   color: var(--accent);
+}
+
+/* Reached by keyboard, the seam has to show where it is — there is no pointer
+   sitting on it to make it visible. */
+.pane-seam:focus-visible {
+  outline: none;
+}
+.pane-seam:focus-visible::after {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--accent-wash);
 }

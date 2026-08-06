@@ -107,6 +107,11 @@ export interface Workspace {
   /** Number of panes the workspace was opened with. */
   layout: number
   panes: PaneSpec[]
+  /**
+   * Where the dividers have been dragged to. Absent until one is moved, and on
+   * anything saved before they could be.
+   */
+  grid: GridTracks | null
   activePaneId: string | null
   zoomedPaneId: string | null
   /**
@@ -304,6 +309,43 @@ export function agentKeepsSessions(agentId: string): boolean {
 export const LAYOUTS = [1, 2, 4, 6, 8, 10, 12] as const
 
 /** Column count for a given pane count. Rows fall out of it. */
+/**
+ * How the space is shared out between the panes.
+ *
+ * Fractions rather than pixels, so a workspace arranged on one screen still
+ * looks like itself on another, and so a window resize divides what is there
+ * instead of leaving a gap.
+ *
+ * One list per axis rather than one per pane. The grid's columns run the whole
+ * height of the workspace, so widening a column widens every pane sitting in
+ * it — that is what tiling means, and it is why panes can never overlap or be
+ * left somewhere you cannot find them.
+ */
+export interface GridTracks {
+  cols: number[]
+  rows: number[]
+}
+
+/**
+ * The tracks to lay a workspace out on, given how many panes it holds.
+ *
+ * Saved sizes are kept only while they still describe the shape they were saved
+ * for. Close a pane out of a six-up and the grid becomes three columns where
+ * there were four; sizes measured for the old shape would be read against the
+ * new one and put the dividers in places nobody dragged them to. Anything that
+ * no longer fits falls back to equal shares, which is the arrangement you would
+ * have had before ever touching a divider.
+ */
+export function tracksFor(count: number, saved?: GridTracks | null): GridTracks {
+  const cols = gridColumns(count)
+  const rows = Math.max(1, Math.ceil(count / cols))
+  const fit = (list: number[] | undefined, n: number): number[] =>
+    list?.length === n && list.every((v) => Number.isFinite(v) && v > 0)
+      ? list
+      : Array.from({ length: n }, () => 1)
+  return { cols: fit(saved?.cols, cols), rows: fit(saved?.rows, rows) }
+}
+
 export function gridColumns(count: number): number {
   if (count <= 1) return 1
   if (count <= 2) return 2

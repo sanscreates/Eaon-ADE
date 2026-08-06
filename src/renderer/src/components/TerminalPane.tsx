@@ -20,14 +20,37 @@ import { carriesFiles, lineFor, pathsFromDrop } from '../lib/drop'
 import { branchOf } from '../lib/branch'
 import { MOD } from '../lib/util'
 
+/**
+ * The drag payload's type, which is also how a pane recognises that what is
+ * being dragged over it is another pane rather than a file from the desktop.
+ * Dropping a file on a pane already means something else.
+ */
+const PANE_DRAG = 'application/x-eaon-pane'
+
 export function TerminalPane({
   workspace,
   pane,
-  index
+  index,
+  style,
+  carrying = false,
+  over = false,
+  onCarry,
+  onOver,
+  onSwap
 }: {
   workspace: Workspace
   pane: PaneSpec
   index: number
+  /** Where the grid has placed this pane. Absent when it is zoomed alone. */
+  style?: React.CSSProperties
+  /** True while this is the pane being carried. */
+  carrying?: boolean
+  /** True while a carried pane is over this one and would trade places with it. */
+  over?: boolean
+  onCarry?: (paneId: string | null) => void
+  onOver?: (paneId: string | null) => void
+  /** Let go over another pane: the two trade places. */
+  onSwap?: (dragId: string) => void
 }): React.JSX.Element {
   const settings = useStore((s) => s.settings)
   const focusPane = useStore((s) => s.focusPane)
@@ -125,9 +148,12 @@ export function TerminalPane({
   return (
     <section
       className="pane"
+      style={style}
       data-active={active}
       data-status={pane.status}
       data-pane-id={pane.id}
+      data-carrying={carrying}
+      data-over={over}
       onMouseDown={() => {
         // Clicking an already-active pane must still put the caret back in it —
         // otherwise you come back from a dialog and cannot type.
@@ -143,16 +169,38 @@ export function TerminalPane({
         setDropping(true)
       }}
       onDragOver={(e) => {
+        /*
+         * Two different things can be dragged onto a pane and they mean
+         * opposite things: another pane, which trades places with this one, and
+         * files from the desktop, which are typed onto the prompt. The payload
+         * says which, so the one place that has to tell them apart is here.
+         */
+        if (e.dataTransfer.types.includes(PANE_DRAG)) {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          onOver?.(pane.id)
+          return
+        }
         if (!carriesFiles(e.dataTransfer)) return
         // Without this the drop never fires and the window navigates instead.
         e.preventDefault()
         e.dataTransfer.dropEffect = 'copy'
       }}
       onDragLeave={() => {
+        onOver?.(null)
         dragDepth.current = Math.max(0, dragDepth.current - 1)
         if (dragDepth.current === 0) setDropping(false)
       }}
       onDrop={(e) => {
+        const carried = e.dataTransfer.getData(PANE_DRAG)
+        if (carried) {
+          e.preventDefault()
+          e.stopPropagation()
+          if (carried !== pane.id) onSwap?.(carried)
+          onCarry?.(null)
+          onOver?.(null)
+          return
+        }
         if (!carriesFiles(e.dataTransfer)) return
         e.preventDefault()
         e.stopPropagation()
@@ -172,7 +220,25 @@ export function TerminalPane({
         })()
       }}
     >
-      <header className="pane-head">
+      {/*
+        The header is the handle. Not the whole pane: the body is a terminal,
+        where dragging selects text, and taking that away to move a window
+        would cost far more than it gave.
+      */}
+      <header
+        className="pane-head"
+        draggable={Boolean(onCarry)}
+        onDragStart={(e) => {
+          e.dataTransfer.setData(PANE_DRAG, pane.id)
+          e.dataTransfer.effectAllowed = 'move'
+          onCarry?.(pane.id)
+        }}
+        onDragEnd={() => {
+          onCarry?.(null)
+          onOver?.(null)
+        }}
+        title="Drag to swap this pane with another"
+      >
         <span className="pane-dot" />
         <span className="pane-index">{index + 1}</span>
         <span className="pane-label">

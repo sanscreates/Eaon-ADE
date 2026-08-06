@@ -1,12 +1,14 @@
 import { create } from 'zustand'
 import {
+  type AgentDef,
+  agentKeepsSessions,
   AGENTS,
+  type BoardCard,
   DEFAULT_SETTINGS,
+  type GridTracks,
   HUES,
   NAME_POOL,
-  agentKeepsSessions,
-  type AgentDef,
-  type BoardCard,
+  PANEL_LABEL,
   type PaneSpec,
   type PaneStatus,
   type PersistedState,
@@ -15,11 +17,10 @@ import {
   type ResumableSession,
   type Settings,
   type SurfaceId,
-  type WorkspaceKind,
   type VaultNote,
   type Workspace,
   type WorkspaceFolder,
-  PANEL_LABEL
+  type WorkspaceKind
 } from '@shared/types'
 import type { DownloadProgress, InstalledModel, SttEngineState } from '@shared/stt'
 import { IDLE_UPDATE_STATE, type UpdateState } from '@shared/update'
@@ -131,6 +132,10 @@ interface AppState {
   ) => void
   resumeSessions: (sessions: ResumableSession[]) => void
   closePane: (workspaceId: string, paneId: string) => void
+  /** Drag one pane onto another and they trade places. */
+  movePane: (workspaceId: string, dragId: string, dropId: string) => void
+  /** Where the dividers sit. Null restores equal shares. */
+  setGridTracks: (workspaceId: string, tracks: GridTracks | null) => void
   focusPane: (workspaceId: string, paneId: string) => void
   zoomPane: (workspaceId: string, paneId: string | null) => void
   patchPane: (paneId: string, patch: Partial<PaneSpec>) => void
@@ -300,6 +305,9 @@ export const useStore = create<AppState>((set, get) => ({
        * read as gone — the one way a folder could lose you a session.
        */
       folderId: w.folderId && folderIds.has(w.folderId) ? w.folderId : null,
+      // Absent on anything saved before the dividers could be moved, which
+      // reads the same as never having moved one.
+      grid: w.grid ?? null,
       zoomedPaneId: null,
       panes: w.panes.map((p) => ({
         ...p,
@@ -432,6 +440,8 @@ export const useStore = create<AppState>((set, get) => ({
       hue: nextHue(s.workspaces),
       layout: draft.layout,
       panes: names.map((n) => makePane(n, draft.cwd, draft.agentId)),
+      // Equal shares until a divider is dragged.
+      grid: null,
       activePaneId: null,
       zoomedPaneId: null,
       folderId: null,
@@ -604,6 +614,8 @@ export const useStore = create<AppState>((set, get) => ({
       hue: nextHue(s.workspaces),
       layout: panes.length,
       panes,
+      // Equal shares until a divider is dragged.
+      grid: null,
       activePaneId: panes[0].id,
       zoomedPaneId: null,
       folderId: null,
@@ -615,6 +627,42 @@ export const useStore = create<AppState>((set, get) => ({
       resumeOpen: false
     })
     get().touchRecent(cwd)
+    get().persist()
+  },
+
+  /**
+   * Swaps two panes over, which is what dragging one onto another does.
+   *
+   * They trade places rather than one pushing the other along. In a grid where
+   * every cell is filled, inserting would shuffle everything after it and move
+   * panes nobody touched; trading moves exactly the two you meant.
+   *
+   * The order of `panes` is the order on screen, so this is the whole change —
+   * the numbering, the layout and what gets saved all read from it.
+   */
+  movePane(workspaceId, dragId, dropId) {
+    if (dragId === dropId) return
+    const s = get()
+    set({
+      workspaces: s.workspaces.map((w) => {
+        if (w.id !== workspaceId) return w
+        const from = w.panes.findIndex((p) => p.id === dragId)
+        const to = w.panes.findIndex((p) => p.id === dropId)
+        if (from < 0 || to < 0) return w
+        const panes = w.panes.slice()
+        ;[panes[from], panes[to]] = [panes[to], panes[from]]
+        return { ...w, panes }
+      })
+    })
+    get().persist()
+  },
+
+  /** Where a divider was let go. Null puts every share back to equal. */
+  setGridTracks(workspaceId, tracks) {
+    const s = get()
+    set({
+      workspaces: s.workspaces.map((w) => (w.id === workspaceId ? { ...w, grid: tracks } : w))
+    })
     get().persist()
   },
 
@@ -757,6 +805,8 @@ export const useStore = create<AppState>((set, get) => ({
       hue,
       layout: 0,
       panes: [],
+      // Equal shares until a divider is dragged.
+      grid: null,
       activePaneId: null,
       zoomedPaneId: null,
       folderId: null,

@@ -4,6 +4,7 @@ import { gridColumns, type Workspace } from '@shared/types'
 import { pendingPrompts, useStore } from '../store/useStore'
 import { terminals } from '../lib/terminals'
 import { TerminalPane } from './TerminalPane'
+import { PaneGrid } from './PaneGrid'
 import { Conductor } from './Conductor'
 import { Notices } from './Notices'
 
@@ -61,20 +62,20 @@ export function TerminalGrid({ workspace }: { workspace: Workspace }): React.JSX
 
   return (
     <div className="grid-stage" data-conductor={conductorOpen}>
-      <div
-        className="grid"
-        data-zoomed={Boolean(zoomed)}
-        style={{ ['--cols' as string]: String(cols) }}
-      >
-        {visible.map((pane) => (
-          <TerminalPane
-            key={pane.id}
-            workspace={workspace}
-            pane={pane}
-            index={workspace.panes.findIndex((p) => p.id === pane.id)}
-          />
-        ))}
-      </div>
+      {zoomed ? (
+        <div className="grid" data-zoomed="true">
+          {visible.map((pane) => (
+            <TerminalPane
+              key={pane.id}
+              workspace={workspace}
+              pane={pane}
+              index={workspace.panes.findIndex((p) => p.id === pane.id)}
+            />
+          ))}
+        </div>
+      ) : (
+        <PaneGrid workspace={workspace} cols={cols} />
+      )}
       <Notices />
       <Conductor workspace={workspace} />
     </div>
