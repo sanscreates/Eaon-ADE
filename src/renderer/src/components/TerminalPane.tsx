@@ -4,6 +4,7 @@ import {
   Copy,
   Eraser,
   GitBranch,
+  LayoutGrid,
   Maximize2,
   Minimize2,
   MoreHorizontal,
@@ -59,6 +60,7 @@ export function TerminalPane({
   const addPane = useStore((s) => s.addPane)
   const restartPane = useStore((s) => s.restartPane)
   const patchPane = useStore((s) => s.patchPane)
+  const setGridTracks = useStore((s) => s.setGridTracks)
 
   const hostRef = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -435,6 +437,25 @@ export function TerminalPane({
             >
               <Eraser size={13} />
               Clear screen
+            </button>
+            {/*
+              Undoes every divider in the workspace at once. Offered here rather
+              than only on the dividers themselves because the moment you want
+              it is when the layout has got away from you — and that is exactly
+              when the divider you would have to find is the thin one squeezed
+              into a corner.
+            */}
+            <div className="menu-sep" />
+            <button
+              className="menu-item"
+              onClick={() => {
+                setGridTracks(workspace.id, null)
+                setContextAt(null)
+                window.setTimeout(() => terminals.fitAll(), 0)
+              }}
+            >
+              <LayoutGrid size={13} />
+              Even out the panes
             </button>
           </div>
         </>

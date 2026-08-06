@@ -167,8 +167,58 @@ export function PaneGrid({
   const template = (list: number[]): string =>
     list.map((f) => `minmax(0, ${f}fr)`).join(` ${SEAM}px `)
 
+  /*
+   * A last row that does not fill the grid.
+   *
+   * Three panes in a two-column grid used to leave the fourth cell empty, and
+   * an empty cell in a workspace is just wasted screen. The panes that are
+   * there widen to take it: the row's columns are shared out between them, so
+   * three panes are two across the top and one across the whole bottom.
+   *
+   * Shared out as evenly as whole columns allow. Five panes over three columns
+   * gives the last row two panes and three columns to split, which cannot come
+   * out even — the earlier pane takes the spare column. Uneven beats a hole,
+   * and the dividers are still there to even it up by hand.
+   */
+  const tail = count - (rows - 1) * cols
+  const partial = tail > 0 && tail < cols
+  const tailSpans: number[] = []
+  const tailStarts: number[] = []
+  if (partial) {
+    const base = Math.floor(cols / tail)
+    const spare = cols % tail
+    let at = 0
+    for (let j = 0; j < tail; j += 1) {
+      const span = base + (j < spare ? 1 : 0)
+      tailStarts.push(at)
+      tailSpans.push(span)
+      at += span
+    }
+  }
+  /** Where one pane ends and the next begins in that row — all a seam can sit on. */
+  const tailSeats = new Set(tailStarts.slice(1))
+
+  const placeOf = (i: number): { gridColumn: string; gridRow: number } => {
+    const row = Math.floor(i / cols)
+    const last = partial && row === rows - 1
+    const start = last ? tailStarts[i - (rows - 1) * cols] : i % cols
+    const span = last ? tailSpans[i - (rows - 1) * cols] : 1
+    return {
+      gridColumn: `${start * 2 + 1} / ${(start + span) * 2}`,
+      gridRow: Math.min(row, rows - 1) * 2 + 1
+    }
+  }
+
   const seams: React.JSX.Element[] = []
   for (let i = 0; i < tracks.cols.length - 1; i += 1) {
+    /*
+     * A column seam stops above a pane that spans across it. Running it the
+     * full height regardless would draw a divider down the middle of a pane and
+     * hand you a handle that resizes two columns it is not between.
+     */
+    const throughLastRow = !partial || tailSeats.has(i + 1)
+    const lastRow = throughLastRow ? rows - 1 : rows - 2
+    if (lastRow < 0) continue
     seams.push(
       <div
         key={`c${i}`}
@@ -180,7 +230,7 @@ export function PaneGrid({
         aria-label={`Resize column ${i + 1}`}
         tabIndex={0}
         onKeyDown={(e) => nudge('cols', i, e)}
-        style={{ gridColumn: i * 2 + 2, gridRow: '1 / -1' }}
+        style={{ gridColumn: i * 2 + 2, gridRow: `1 / ${lastRow * 2 + 2}` }}
         onMouseDown={(e) => {
           e.preventDefault()
           startDrag('cols', i, e)
@@ -229,8 +279,6 @@ export function PaneGrid({
       }}
     >
       {workspace.panes.map((pane, i) => {
-        const col = i % cols
-        const row = Math.floor(i / cols)
         return (
           <TerminalPane
             key={pane.id}
@@ -239,7 +287,7 @@ export function PaneGrid({
             index={i}
             // Placed rather than flowed, because the dividers occupy tracks of
             // their own and a pane left to flow would land in one of them.
-            style={{ gridColumn: col * 2 + 1, gridRow: Math.min(row, rows - 1) * 2 + 1 }}
+            style={placeOf(i)}
             carrying={carrying === pane.id}
             over={over === pane.id && carrying !== null && carrying !== pane.id}
             onCarry={setCarrying}
