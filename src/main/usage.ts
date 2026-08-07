@@ -1,3 +1,4 @@
+import { app } from 'electron'
 import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import os from 'node:os'
@@ -57,6 +58,53 @@ const KEEP_MS = WEEK_MS
 const cursors = new Map<string, FileCursor>()
 /** Guards against two refreshes overlapping and counting the same bytes twice. */
 let running: Promise<UsageReport> | null = null
+
+/*
+ * Asking Anthropic is a network call, and it was being made like a local read.
+ *
+ * The readout refreshes itself every ninety seconds and again on every manual
+ * press, and each of those went straight out to the network — for a pair of
+ * percentages that move over hours. Anthropic answered 429, and the reply to
+ * being rate limited was to ask again ninety seconds later, and again, which is
+ * how it stayed that way. Nothing here retried, nothing waited, and nothing
+ * remembered the answer it already had.
+ *
+ * So a good answer is kept and reused, one request is made at a time however
+ * many readers ask, and a refusal is respected: after a 429 nothing is sent
+ * until the moment Anthropic named, or a doubling wait if it named none.
+ */
+
+/** How long an answer stays good. Percentages do not move faster than this. */
+const ANTHROPIC_FRESH_MS = 5 * 60 * 1000
+
+/** First wait after a refusal that came with no `Retry-After`, then doubling. */
+const BACKOFF_FIRST_MS = 60_000
+const BACKOFF_MAX_MS = 30 * 60 * 1000
+
+let anthropicCache: { at: number; report: UsageReport } | null = null
+let anthropicInflight: Promise<UsageReport> | null = null
+/** Epoch ms before which nothing may be sent. */
+let blockedUntil = 0
+let backoffMs = 0
+
+/**
+ * When Anthropic says to come back. Seconds or an HTTP date, per the header's
+ * definition; anything unreadable falls through to the doubling wait, because a
+ * header we cannot parse is not a reason to ignore the refusal.
+ */
+function retryAfterMs(header: string | null): number {
+  if (!header) return 0
+  const secs = Number(header)
+  if (Number.isFinite(secs) && secs > 0) return Math.min(secs * 1000, BACKOFF_MAX_MS)
+  const at = Date.parse(header)
+  return Number.isFinite(at) ? Math.min(Math.max(0, at - Date.now()), BACKOFF_MAX_MS) : 0
+}
+
+/** "4m" — how long until it is worth asking again. */
+function waitLabel(ms: number): string {
+  const mins = Math.ceil(ms / 60_000)
+  return mins <= 1 ? 'a minute' : `${mins} minutes`
+}
 
 /*
  * Whose transcripts are being counted.
@@ -366,6 +414,11 @@ export function localUsage(limitOverrides?: Partial<Record<'session' | 'week', n
 /** Drop everything learned, so the next read starts from scratch. */
 export function resetUsageCache(): void {
   cursors.clear()
+  // A different account's figures are not this one's, and a refusal earned
+  // under one token should not silence the next.
+  anthropicCache = null
+  blockedUntil = 0
+  backoffMs = 0
 }
 
 /**
@@ -380,7 +433,7 @@ export function resetUsageCache(): void {
  * can change without notice; a failure here falls back to the local reading
  * rather than leaving the readout empty.
  */
-export async function anthropicUsage(): Promise<UsageReport> {
+async function requestAnthropicUsage(): Promise<UsageReport> {
   const started = Date.now()
   const fallback = async (error: string): Promise<UsageReport> => ({
     ...(await localUsage()),
@@ -418,10 +471,26 @@ export async function anthropicUsage(): Promise<UsageReport> {
       headers: {
         authorization: `Bearer ${token}`,
         'anthropic-beta': 'oauth-2025-04-20',
-        accept: 'application/json'
+        accept: 'application/json',
+        // An unnamed client is the easiest kind to throttle.
+        'user-agent': `EaonADE/${app.getVersion()}`
       }
     })
-    if (!res.ok) return fallback(`Anthropic replied ${res.status}.`)
+    if (res.status === 429) {
+      const named = retryAfterMs(res.headers.get('retry-after'))
+      backoffMs = named || Math.min(Math.max(backoffMs * 2, BACKOFF_FIRST_MS), BACKOFF_MAX_MS)
+      blockedUntil = Date.now() + backoffMs
+      return fallback(
+        `Anthropic is limiting these checks. Showing your transcripts; trying again in ${waitLabel(backoffMs)}.`
+      )
+    }
+    if (!res.ok) {
+      // Anything else is worth a pause too, or a broken endpoint is asked the
+      // same question every ninety seconds for as long as the app is open.
+      backoffMs = Math.min(Math.max(backoffMs * 2, BACKOFF_FIRST_MS), BACKOFF_MAX_MS)
+      blockedUntil = Date.now() + backoffMs
+      return fallback(`Anthropic replied ${res.status}. Trying again in ${waitLabel(backoffMs)}.`)
+    }
     body = (await res.json()) as typeof body
   } catch (err) {
     return fallback(`Could not reach Anthropic: ${err instanceof Error ? err.message : err}`)
@@ -466,7 +535,7 @@ export async function anthropicUsage(): Promise<UsageReport> {
     models: spec.id === 'week' ? perModel.sort((a, b) => b.billed - a.billed) : []
   })
 
-  return {
+  const report: UsageReport = {
     source: 'anthropic',
     at: now,
     tookMs: now - started,
@@ -475,4 +544,46 @@ export async function anthropicUsage(): Promise<UsageReport> {
     messages: 0,
     windows: [windowFor(WINDOWS[0], five), windowFor(WINDOWS[1], week)]
   }
+  anthropicCache = { at: now, report }
+  backoffMs = 0
+  blockedUntil = 0
+  return report
+}
+
+/**
+ * The authenticated readout, rationed.
+ *
+ * Three things stand between a reader and the network, and each of them was
+ * missing: an answer that is still good is handed back rather than asked for
+ * again, readers arriving together share one request rather than making one
+ * each, and a refusal is waited out rather than argued with.
+ */
+export async function anthropicUsage(): Promise<UsageReport> {
+  const now = Date.now()
+
+  if (anthropicCache && now - anthropicCache.at < ANTHROPIC_FRESH_MS) {
+    return anthropicCache.report
+  }
+
+  if (now < blockedUntil) {
+    // Anthropic asked to be left alone, so it is. The last good figures are
+    // better than nothing; the transcripts are better than nothing at all.
+    const wait = waitLabel(blockedUntil - now)
+    if (anthropicCache) {
+      return {
+        ...anthropicCache.report,
+        error: `Anthropic is limiting these checks. Showing the last figures; trying again in ${wait}.`
+      }
+    }
+    return {
+      ...(await localUsage()),
+      error: `Anthropic is limiting these checks. Showing your transcripts; trying again in ${wait}.`
+    }
+  }
+
+  if (anthropicInflight) return anthropicInflight
+  anthropicInflight = requestAnthropicUsage().finally(() => {
+    anthropicInflight = null
+  })
+  return anthropicInflight
 }
