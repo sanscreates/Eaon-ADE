@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Check, GitBranch, GitCommitVertical, Minus, Plus, RefreshCw } from 'lucide-react'
+import { Check, GitBranch, GitCommitVertical, Minus, Plus, RefreshCw, SquareStack } from 'lucide-react'
 import type { GitFile, GitStatus } from '@shared/types'
+import type { SshHost } from '@shared/ssh'
 import { useStore } from '../store/useStore'
 
 function DiffView({ text }: { text: string }): React.JSX.Element {
@@ -23,8 +24,24 @@ function DiffView({ text }: { text: string }): React.JSX.Element {
   )
 }
 
-export function GitPanel({ cwd }: { cwd: string }): React.JSX.Element {
+export function GitPanel({
+  cwd,
+  host,
+  workspaceId
+}: {
+  cwd: string
+  /** Set for a remote workspace — every call below runs over ssh instead. */
+  host?: SshHost | null
+  /**
+   * Present only when this is the dock's own copy — lets it split out into
+   * its own grid pane. Left undefined when GitPanel is rendered *as* a diff
+   * pane's body (DiffGridPane), so a pane cannot offer to pop out a second
+   * copy of itself.
+   */
+  workspaceId?: string
+}): React.JSX.Element {
   const notify = useStore((s) => s.notify)
+  const addPane = useStore((s) => s.addPane)
   const [status, setStatus] = useState<GitStatus | null>(null)
   const [selected, setSelected] = useState<GitFile | null>(null)
   const [diff, setDiff] = useState('')
@@ -32,10 +49,10 @@ export function GitPanel({ cwd }: { cwd: string }): React.JSX.Element {
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(async () => {
-    const next = await window.eaon.git.status(cwd)
+    const next = await window.eaon.git.status(cwd, host)
     setStatus(next)
     return next
-  }, [cwd])
+  }, [cwd, host])
 
   useEffect(() => {
     setSelected(null)
@@ -45,8 +62,8 @@ export function GitPanel({ cwd }: { cwd: string }): React.JSX.Element {
 
   useEffect(() => {
     if (!selected) return
-    window.eaon.git.diff(cwd, selected.path, selected.staged).then(setDiff)
-  }, [selected, cwd])
+    window.eaon.git.diff(cwd, selected.path, selected.staged, host).then(setDiff)
+  }, [selected, cwd, host])
 
   if (status && !status.repo) {
     return (
@@ -94,14 +111,14 @@ export function GitPanel({ cwd }: { cwd: string }): React.JSX.Element {
         onClick={(e) => {
           e.stopPropagation()
           void act(() =>
-            f.staged ? window.eaon.git.unstage(cwd, f.path) : window.eaon.git.stage(cwd, f.path)
+            f.staged ? window.eaon.git.unstage(cwd, f.path, host) : window.eaon.git.stage(cwd, f.path, host)
           )
         }}
         onKeyDown={(e) => {
           if (e.key !== 'Enter') return
           e.stopPropagation()
           void act(() =>
-            f.staged ? window.eaon.git.unstage(cwd, f.path) : window.eaon.git.stage(cwd, f.path)
+            f.staged ? window.eaon.git.unstage(cwd, f.path, host) : window.eaon.git.stage(cwd, f.path, host)
           )
         }}
       >
@@ -119,6 +136,16 @@ export function GitPanel({ cwd }: { cwd: string }): React.JSX.Element {
         </span>
         {status && status.ahead > 0 && <span className="chip">↑{status.ahead}</span>}
         {status && status.behind > 0 && <span className="chip">↓{status.behind}</span>}
+        {workspaceId && (
+          <button
+            className="icon-btn"
+            onClick={() => addPane(workspaceId, { kind: 'diff' })}
+            title="Open in its own pane, beside your terminals"
+            aria-label="Open in its own pane"
+          >
+            <SquareStack size={13} />
+          </button>
+        )}
         <button className="icon-btn" onClick={() => void refresh()} aria-label="Refresh">
           <RefreshCw size={13} />
         </button>
@@ -171,7 +198,7 @@ export function GitPanel({ cwd }: { cwd: string }): React.JSX.Element {
                 className="btn"
                 style={{ height: 30 }}
                 disabled={busy || !changed.length}
-                onClick={() => void act(() => window.eaon.git.stageAll(cwd))}
+                onClick={() => void act(() => window.eaon.git.stageAll(cwd, host))}
               >
                 <Plus size={13} />
                 Stage everything
@@ -183,7 +210,7 @@ export function GitPanel({ cwd }: { cwd: string }): React.JSX.Element {
                 disabled={busy || !message.trim() || !staged.length}
                 onClick={() =>
                   void act(async () => {
-                    const out = await window.eaon.git.commit(cwd, message.trim())
+                    const out = await window.eaon.git.commit(cwd, message.trim(), host)
                     setMessage('')
                     notify({ kind: 'info', title: 'Commit', text: out.split('\n')[0] })
                   })

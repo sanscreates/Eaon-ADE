@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { tracksFor, type GridTracks, type Workspace } from '@shared/types'
+import { paneKind, tracksFor, type GridTracks, type Workspace } from '@shared/types'
 import { useStore } from '../store/useStore'
 import { terminals } from '../lib/terminals'
 import { TerminalPane } from './TerminalPane'
+import { PreviewGridPane } from './PreviewGridPane'
+import { DiffGridPane } from './DiffGridPane'
 
 /**
  * The panes, and the dividers between them.
@@ -36,6 +38,18 @@ interface Drag {
   after: number
 }
 
+/**
+ * A press on the one pixel where a column seam and a row seam cross, not yet
+ * committed to either. See the corner-generation block below for why this
+ * point needs handling of its own.
+ */
+interface CornerPress {
+  colIndex: number
+  rowIndex: number
+  startX: number
+  startY: number
+}
+
 export function PaneGrid({
   workspace,
   cols
@@ -48,6 +62,7 @@ export function PaneGrid({
 
   const gridRef = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<Drag | null>(null)
+  const [cornerPress, setCornerPress] = useState<CornerPress | null>(null)
   /** The pane being carried, and the one it is over. */
   const [carrying, setCarrying] = useState<string | null>(null)
   const [over, setOver] = useState<string | null>(null)
@@ -108,7 +123,11 @@ export function PaneGrid({
     return () => window.clearTimeout(id)
   }, [count, cols])
 
-  const startDrag = (axis: 'cols' | 'rows', index: number, e: React.MouseEvent): void => {
+  /**
+   * Point rather than `React.MouseEvent`, so a corner press — resolved from a
+   * plain DOM `mousemove`, not a React event — can start a drag the same way.
+   */
+  const startDrag = (axis: 'cols' | 'rows', index: number, point: { clientX: number; clientY: number }): void => {
     const box = gridRef.current?.getBoundingClientRect()
     if (!box) return
     const list = tracks[axis]
@@ -119,7 +138,7 @@ export function PaneGrid({
     setDrag({
       axis,
       index,
-      start: axis === 'cols' ? e.clientX : e.clientY,
+      start: axis === 'cols' ? point.clientX : point.clientY,
       // In pixels per unit of fraction, so a drag of n pixels moves the seam n
       // pixels however the fractions happen to be scaled.
       span: (span * (list[index] + list[index + 1])) / total,
@@ -127,6 +146,45 @@ export function PaneGrid({
       after: list[index + 1]
     })
   }
+
+  /*
+   * A row seam spans every column track and a column seam spans every row
+   * track (see the comment above the seam loops below), so the single track
+   * where one of each crosses belongs to both — and whichever was appended
+   * to the DOM last silently wins the pointer, every time, for anyone who
+   * grabs exactly that pixel. `pane-seam-corner` sits on top of both at
+   * exactly that point so nothing is left to DOM order, and decides which
+   * seam it belongs to from the direction actually dragged rather than
+   * guessing: mostly sideways resizes the column, mostly up or down resizes
+   * the row — the same choice a press a few pixels either side would give.
+   */
+  useEffect(() => {
+    if (!cornerPress) return
+    // Below this many pixels the gesture could still be either axis, or just
+    // a click that never meant to drag at all.
+    const THRESHOLD = 3
+
+    const onMove = (e: MouseEvent): void => {
+      const dx = e.clientX - cornerPress.startX
+      const dy = e.clientY - cornerPress.startY
+      if (Math.abs(dx) < THRESHOLD && Math.abs(dy) < THRESHOLD) return
+      const axis = Math.abs(dx) >= Math.abs(dy) ? 'cols' : 'rows'
+      const index = axis === 'cols' ? cornerPress.colIndex : cornerPress.rowIndex
+      setCornerPress(null)
+      startDrag(axis, index, e)
+    }
+    const onUp = (): void => setCornerPress(null)
+
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    return () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    // startDrag closes over `tracks`, so it is listed here even though it is
+    // cheap to resubscribe: without it, a corner press held across an
+    // unrelated re-render could resolve against a stale track layout.
+  }, [cornerPress, startDrag])
 
   /**
    * Moving a divider from the keyboard.
@@ -267,11 +325,36 @@ export function PaneGrid({
     )
   }
 
+  /*
+   * Every point where a column seam and a row seam actually cross — same
+   * `lastRow` a column seam stops at above, since a corner can only exist
+   * where that seam still reaches.
+   */
+  const corners: React.JSX.Element[] = []
+  for (let i = 0; i < tracks.cols.length - 1; i += 1) {
+    const throughLastRow = !partial || tailSeats.has(i + 1)
+    const lastRow = throughLastRow ? rows - 1 : rows - 2
+    for (let r = 0; r < lastRow; r += 1) {
+      corners.push(
+        <div
+          key={`x${i}-${r}`}
+          className="pane-seam-corner"
+          aria-hidden="true"
+          style={{ gridColumn: i * 2 + 2, gridRow: r * 2 + 2 }}
+          onMouseDown={(e) => {
+            e.preventDefault()
+            setCornerPress({ colIndex: i, rowIndex: r, startX: e.clientX, startY: e.clientY })
+          }}
+        />
+      )
+    }
+  }
+
   return (
     <div
       className="grid"
       ref={gridRef}
-      data-dragging={Boolean(drag)}
+      data-dragging={Boolean(drag) || Boolean(cornerPress)}
       data-carrying={Boolean(carrying)}
       style={{
         gridTemplateColumns: template(tracks.cols),
@@ -279,31 +362,36 @@ export function PaneGrid({
       }}
     >
       {workspace.panes.map((pane, i) => {
-        return (
-          <TerminalPane
-            key={pane.id}
-            workspace={workspace}
-            pane={pane}
-            index={i}
-            // Placed rather than flowed, because the dividers occupy tracks of
-            // their own and a pane left to flow would land in one of them.
-            style={placeOf(i)}
-            carrying={carrying === pane.id}
-            over={over === pane.id && carrying !== null && carrying !== pane.id}
-            onCarry={setCarrying}
-            onOver={setOver}
-            onSwap={(dragId) => {
-              movePane(workspace.id, dragId, pane.id)
-              setCarrying(null)
-              setOver(null)
-              // Trading places changes nothing about either pane's size, but a
-              // grid that has been resized can hand them different cells.
-              window.setTimeout(() => terminals.fitAll(), 0)
-            }}
-          />
-        )
+        // Every kind takes the exact same position/drag/swap props — placing
+        // a pane in the grid does not care what is inside it, only PaneGrid's
+        // own tracks and seams do.
+        const shared = {
+          workspace,
+          pane,
+          index: i,
+          // Placed rather than flowed, because the dividers occupy tracks of
+          // their own and a pane left to flow would land in one of them.
+          style: placeOf(i),
+          carrying: carrying === pane.id,
+          over: over === pane.id && carrying !== null && carrying !== pane.id,
+          onCarry: setCarrying,
+          onOver: setOver,
+          onSwap: (dragId: string): void => {
+            movePane(workspace.id, dragId, pane.id)
+            setCarrying(null)
+            setOver(null)
+            // Trading places changes nothing about either pane's size, but a
+            // grid that has been resized can hand them different cells.
+            window.setTimeout(() => terminals.fitAll(), 0)
+          }
+        }
+        const kind = paneKind(pane)
+        if (kind === 'preview') return <PreviewGridPane key={pane.id} {...shared} />
+        if (kind === 'diff') return <DiffGridPane key={pane.id} {...shared} />
+        return <TerminalPane key={pane.id} {...shared} />
       })}
       {seams}
+      {corners}
     </div>
   )
 }

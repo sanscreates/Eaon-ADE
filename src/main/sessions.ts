@@ -229,9 +229,23 @@ async function claudeSessions(limit: number): Promise<ResumableSession[]> {
   }))
 }
 
-/** Codex writes rollout transcripts under ~/.codex/sessions when it is installed. */
+/**
+ * Where the active Codex account keeps its rollouts.
+ *
+ * Set from the accounts layer at startup, for the same reason the usage
+ * reader is: switching accounts has to change which transcripts are listed,
+ * and a hard-coded `~/.codex` would keep offering the previous account's
+ * sessions after a switch. Null means no override, i.e. plain `~/.codex`.
+ */
+let codexHome: () => string | null = () => null
+
+export function setCodexHome(fn: () => string | null): void {
+  codexHome = fn
+}
+
+/** Codex writes rollout transcripts under $CODEX_HOME/sessions when installed. */
 async function codexSessions(limit: number): Promise<ResumableSession[]> {
-  const root = path.join(os.homedir(), '.codex', 'sessions')
+  const root = path.join(codexHome() ?? path.join(os.homedir(), '.codex'), 'sessions')
   const found: { file: string; id: string; mtime: number }[] = []
 
   async function walk(dir: string, depth: number): Promise<void> {

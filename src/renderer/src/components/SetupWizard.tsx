@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { Check, Folder, FolderOpen, Pencil, Plus, Terminal } from 'lucide-react'
-import { LAYOUTS, gridShape, type Preset } from '@shared/types'
+import { Check, Folder, FolderOpen, Pencil, Plus, Server, Terminal } from 'lucide-react'
+import { LAYOUTS, gridShape, type AgentDef, type Preset } from '@shared/types'
 import { useStore } from '../store/useStore'
 import { basename, shortPath, uid } from '../lib/util'
+import { HostPicker } from './HostPicker'
+import { hostLabel } from '@shared/ssh'
 
 const STEPS = ['Start', 'Layout', 'Agents'] as const
 
@@ -41,6 +43,9 @@ export function SetupWizard(): React.JSX.Element | null {
   const update = useStore((s) => s.updateWizard)
   const close = useStore((s) => s.closeWizard)
   const create = useStore((s) => s.createWorkspace)
+  const createTrial = useStore((s) => s.createTrial)
+  const notify = useStore((s) => s.notify)
+  const [isolating, setIsolating] = useState(false)
   const recents = useStore((s) => s.recents)
   const presets = useStore((s) => s.presets)
   const agents = useStore((s) => s.agents)
@@ -49,15 +54,43 @@ export function SetupWizard(): React.JSX.Element | null {
   const savePreset = useStore((s) => s.savePreset)
 
   const [pathValid, setPathValid] = useState(true)
+  const [remoteAgents, setRemoteAgents] = useState<AgentDef[] | null>(null)
+  // Which panel step 0 shows. Separate from draft.host on purpose: the tab
+  // has to stay on "Remote host" while the user is still picking or typing
+  // one — tying it to draft.host directly meant the picker could never
+  // appear in the first place, since nothing sets a host by clicking the tab.
+  const [showRemote, setShowRemote] = useState(false)
 
   useEffect(() => {
-    if (!draft?.cwd) return
+    // Which CLIs are on PATH is a question about whichever machine is about
+    // to run them — checked fresh per host rather than assumed from this
+    // machine's own answer, which would be wrong in both directions.
+    if (!draft?.host) {
+      setRemoteAgents(null)
+      return
+    }
+    let live = true
+    window.eaon.agents.detectRemote(draft.host).then((list) => live && setRemoteAgents(list))
+    return () => {
+      live = false
+    }
+  }, [draft?.host])
+
+  useEffect(() => {
+    // A remote path cannot be checked against the local filesystem — there is
+    // no folder browser for it in this version, so it is taken on trust the
+    // same way typing an unusual local path is: the workspace still opens,
+    // and a wrong path just means an empty first `cd` in the pane.
+    if (!draft?.cwd || draft.host) {
+      setPathValid(true)
+      return
+    }
     let live = true
     window.eaon.fs.isDir(draft.cwd).then((ok) => live && setPathValid(ok))
     return () => {
       live = false
     }
-  }, [draft?.cwd])
+  }, [draft?.cwd, draft?.host])
 
   if (!draft) return null
 
@@ -85,12 +118,38 @@ export function SetupWizard(): React.JSX.Element | null {
     })
   }
 
-  const next = (): void => {
-    if (draft.step < 2) update({ step: (draft.step + 1) as 0 | 1 | 2 })
-    else create(draft)
+  const next = async (): Promise<void> => {
+    if (draft.step < 2) {
+      update({ step: (draft.step + 1) as 0 | 1 | 2 })
+      return
+    }
+    if (!draft.isolate) {
+      create(draft)
+      return
+    }
+    // Cutting worktrees takes a moment and can fail — the folder may not be a
+    // repository — so the wizard stays put and says so rather than closing on
+    // a workspace that was never made.
+    setIsolating(true)
+    try {
+      const res = await createTrial(draft)
+      if (!res.ok) {
+        notify({ kind: 'error', title: 'Could not isolate the run', text: res.error ?? 'Unknown error.' })
+      }
+    } finally {
+      setIsolating(false)
+    }
   }
 
-  const canAdvance = draft.step === 0 ? Boolean(draft.cwd) && pathValid : true
+  const canAdvance =
+    draft.step === 0
+      ? showRemote
+        ? // A host has to actually be chosen — draft.cwd can still be holding
+          // whatever local path the wizard opened with, from before the tab
+          // was switched, which is not a fact about the remote box at all.
+          Boolean(draft.host) && Boolean(draft.cwd)
+        : Boolean(draft.cwd) && pathValid
+      : true
 
   return (
     <div className="surface-scroll">
@@ -115,55 +174,99 @@ export function SetupWizard(): React.JSX.Element | null {
           <>
             <div className="wizard-head">
               <h1 className="wizard-title">Where are you working?</h1>
-              <p className="wizard-sub">Every terminal in this workspace starts in this folder.</p>
+              <p className="wizard-sub">
+                {draft.host
+                  ? 'Every terminal in this workspace runs on that box over ssh.'
+                  : 'Every terminal in this workspace starts in this folder.'}
+              </p>
             </div>
 
-            <div className="section">
-              <div className="field" style={{ borderColor: pathValid ? undefined : 'var(--danger)' }}>
-                <Folder size={15} color="var(--text-dim)" />
-                <input
-                  value={draft.cwd}
-                  spellCheck={false}
-                  onChange={(e) => update({ cwd: e.target.value })}
-                  placeholder="/Users/you/projects/thing"
-                  aria-label="Working folder"
-                />
-                <button className="btn btn-ghost" style={{ height: 28 }} onClick={browse}>
-                  <FolderOpen size={14} />
-                  Browse
-                </button>
-              </div>
-              {!pathValid && (
-                <p className="section-note" style={{ color: 'var(--danger)', marginTop: 8 }}>
-                  That folder does not exist. Pick another one.
-                </p>
-              )}
+            <div className="loc-toggle" role="tablist" aria-label="Local or remote">
+              <button
+                role="tab"
+                aria-selected={!showRemote}
+                data-on={!showRemote}
+                onClick={() => {
+                  setShowRemote(false)
+                  // A host picked while looking at this tab a moment ago
+                  // should not silently make a "local" workspace remote.
+                  if (draft.host) update({ host: null, cwd: '' })
+                }}
+              >
+                <Folder size={13} />
+                This machine
+              </button>
+              <button
+                role="tab"
+                aria-selected={showRemote}
+                data-on={showRemote}
+                onClick={() => setShowRemote(true)}
+              >
+                <Server size={13} />
+                Remote host
+              </button>
             </div>
 
-            {recents.length > 0 && (
-              <div className="section">
-                <div className="section-head">
-                  <span className="eyebrow">Recent</span>
-                  <span className="section-note">{recents.length} folders</span>
-                </div>
-                <div className="card-grid">
-                  {recents.map((r) => (
-                    <button
-                      className="folder-card"
-                      key={r.path}
-                      data-on={r.path === draft.cwd}
-                      onClick={() => update({ cwd: r.path })}
-                    >
-                      <Folder size={16} />
-                      <span className="folder-text">
-                        <span className="folder-name">{r.name}</span>
-                        <span className="folder-path">{shortPath(r.path, home)}</span>
-                      </span>
-                      {r.sessions > 0 && <span className="chip">{r.sessions}</span>}
+            {!showRemote ? (
+              <>
+                <div className="section">
+                  <div
+                    className="field"
+                    style={{ borderColor: pathValid ? undefined : 'var(--danger)' }}
+                  >
+                    <Folder size={15} color="var(--text-dim)" />
+                    <input
+                      value={draft.cwd}
+                      spellCheck={false}
+                      onChange={(e) => update({ cwd: e.target.value })}
+                      placeholder="/Users/you/projects/thing"
+                      aria-label="Working folder"
+                    />
+                    <button className="btn btn-ghost" style={{ height: 28 }} onClick={browse}>
+                      <FolderOpen size={14} />
+                      Browse
                     </button>
-                  ))}
+                  </div>
+                  {!pathValid && (
+                    <p className="section-note" style={{ color: 'var(--danger)', marginTop: 8 }}>
+                      That folder does not exist. Pick another one.
+                    </p>
+                  )}
                 </div>
-              </div>
+
+                {recents.length > 0 && (
+                  <div className="section">
+                    <div className="section-head">
+                      <span className="eyebrow">Recent</span>
+                      <span className="section-note">{recents.length} folders</span>
+                    </div>
+                    <div className="card-grid">
+                      {recents.map((r) => (
+                        <button
+                          className="folder-card"
+                          key={r.path}
+                          data-on={r.path === draft.cwd}
+                          onClick={() => update({ cwd: r.path })}
+                        >
+                          <Folder size={16} />
+                          <span className="folder-text">
+                            <span className="folder-name">{r.name}</span>
+                            <span className="folder-path">{shortPath(r.path, home)}</span>
+                          </span>
+                          {r.sessions > 0 && <span className="chip">{r.sessions}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <HostPicker
+                host={draft.host}
+                remotePath={draft.cwd}
+                onHost={(h) => update({ host: h, cwd: draft.cwd })}
+                onPath={(p) => update({ cwd: p })}
+              />
             )}
           </>
         )}
@@ -246,13 +349,26 @@ export function SetupWizard(): React.JSX.Element | null {
             <div className="wizard-head">
               <h1 className="wizard-title">Which agent runs in each pane?</h1>
               <p className="wizard-sub">
-                Eaon ADE types the command into a fresh shell. Anything greyed out is not on your PATH.
+                Eaon ADE types the command into a fresh shell. Anything greyed out is not on{' '}
+                {draft.host ? `${hostLabel(draft.host)}'s PATH.` : 'your PATH.'}
               </p>
             </div>
 
             <div className="section">
               <div className="agent-list">
-                {agents.map((a) => (
+                {/*
+                 * PATH is a property of whichever machine is about to run the
+                 * command, so a remote workspace checks the remote host, not
+                 * this one — reusing the local `available` flags here would
+                 * grey out a CLI that only happens to be missing on this Mac,
+                 * or wrongly offer one that is not actually on the far end.
+                 * While that check is in flight, nothing is greyed out yet
+                 * rather than guessing.
+                 */}
+                {(draft.host
+                  ? (remoteAgents ?? agents.map((a) => ({ ...a, available: true })))
+                  : agents
+                ).map((a) => (
                   <button
                     className="agent-row"
                     key={a.id}
@@ -295,6 +411,34 @@ export function SetupWizard(): React.JSX.Element | null {
                 }
               />
             </div>
+
+            {/*
+              * Isolation only means anything with more than one pane and a real
+              * agent: one attempt has nothing to be compared against, and a
+              * bare shell is not competing with anybody.
+              */}
+            {draft.layout > 1 && draft.agentId !== 'shell' && (
+              <div className="section">
+                <div className="section-head">
+                  <span className="eyebrow">Isolation</span>
+                  <span className="section-note">Uses git worktrees</span>
+                </div>
+                <label className="iso-toggle" data-on={draft.isolate}>
+                  <input
+                    type="checkbox"
+                    checked={draft.isolate}
+                    onChange={(e) => update({ isolate: e.target.checked })}
+                  />
+                  <span className="iso-body">
+                    <span className="iso-name">Give each agent its own checkout</span>
+                    <span className="iso-note">
+                      {draft.layout} branches cut from this one, so the agents cannot overwrite
+                      each other. Compare what each changed afterwards and merge the one you want.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
           </>
         )}
 
@@ -314,8 +458,18 @@ export function SetupWizard(): React.JSX.Element | null {
               Open without agents
             </button>
           )}
-          <button className="btn btn-primary" onClick={next} disabled={!canAdvance}>
-            {draft.step === 2 ? 'Open workspace' : 'Next'}
+          <button
+            className="btn btn-primary"
+            onClick={() => void next()}
+            disabled={!canAdvance || isolating}
+          >
+            {isolating
+              ? 'Cutting worktrees…'
+              : draft.step === 2
+                ? draft.isolate
+                  ? 'Start the trial'
+                  : 'Open workspace'
+                : 'Next'}
           </button>
         </div>
       </div>

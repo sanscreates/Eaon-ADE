@@ -1,0 +1,94 @@
+/*
+ * Choosing local vs. remote, and picking a host, in the setup wizard.
+ *
+ * The tab switcher matches the settings nav's own on/off language rather than
+ * inventing a new one; the host cards reuse .folder-card outright, since a
+ * host in this list plays exactly the role a recent folder does one step
+ * over — something you tap once to fill in "where."
+ */
+
+.loc-toggle {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 3px;
+  border-radius: var(--r-md);
+  background: var(--ink-100);
+  border: 1px solid var(--line-100);
+}
+
+.loc-toggle button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex: 1;
+  height: 32px;
+  border-radius: calc(var(--r-md) - 3px);
+  border: none;
+  background: transparent;
+  color: var(--text-mid);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition:
+    background var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+.loc-toggle button:hover {
+  color: var(--text-hi);
+}
+.loc-toggle button[data-on='true'] {
+  background: var(--ink-300);
+  color: var(--text-hi);
+}
+.loc-toggle button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--accent-edge);
+}
+
+/* ---- the "Add a host" mini-form ---------------------------------------- */
+
+.host-manual-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-mid);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+.host-manual-toggle:hover {
+  color: var(--text-hi);
+}
+.host-manual-chevron {
+  transition: transform var(--dur) var(--ease);
+}
+.host-manual-chevron[data-open='true'] {
+  transform: rotate(180deg);
+}
+
+.host-manual-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-100);
+  background: var(--ink-100);
+}
+
+.host-manual-row {
+  display: flex;
+  gap: 8px;
+}
+.host-manual-row .field {
+  flex: 1;
+}
+.host-manual-port {
+  max-width: 88px;
+}

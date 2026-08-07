@@ -8,6 +8,11 @@ dist/
 dev-app-update.yml
 *.tsbuildinfo
 
+# Scratch bundle a check script writes inside the repo (needs a node_modules
+# ancestor to resolve node-pty) and removes when it finishes. Ignored in case
+# a crash mid-run ever leaves one behind.
+*.tmp.mjs
+
 # Machine-specific: absolute paths to this install. Regenerated per machine.
 # The memories themselves (.eaonbrain/) are committed on purpose.
 .mcp.json

@@ -234,3 +234,38 @@
   justify-content: flex-end;
   margin-top: 12px;
 }
+
+/* ---- the Codex sign-in hand-off ---------------------------------------- */
+
+/*
+ * There is no browser flow to drive here, so this is a short set of
+ * instructions rather than a dialog that follows along: make a home, run the
+ * command, come back. It is deliberately plain — the work is happening in a
+ * terminal a few centimetres away.
+ */
+.cx-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--accent-edge);
+  background: var(--accent-wash);
+}
+
+.cx-cmd {
+  padding: 8px 10px;
+  border-radius: var(--r-sm);
+  background: var(--ink-300);
+  color: var(--text-mid);
+  font-size: var(--fs-micro);
+  overflow-x: auto;
+  white-space: nowrap;
+  user-select: all;
+}
+
+.cx-pending-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

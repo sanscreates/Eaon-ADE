@@ -1,5 +1,13 @@
 /* Terminal grid, panes, the pulse spine and the conductor dock. */
 
+/* Holds the trial strip above the grid, when there is one. */
+.grid-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .grid-stage {
   position: relative;
   flex: 1;
@@ -88,6 +96,36 @@
   opacity: 1;
 }
 
+/*
+ * The single track where a column seam and a row seam cross. Both of those
+ * already reach across this point (a column seam runs the full height, a row
+ * seam the full width), so without this a press here would always resolve to
+ * whichever was last in the DOM. Sits above both; which axis it resizes
+ * follows the direction actually dragged, decided in PaneGrid.tsx.
+ */
+.pane-seam-corner {
+  position: relative;
+  z-index: 3;
+  cursor: move;
+}
+.pane-seam-corner::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+}
+.pane-seam-corner::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease);
+}
+.pane-seam-corner:hover::after {
+  opacity: 1;
+}
+
 /* While a divider is moving, the pointer belongs to it and nothing else. */
 .grid[data-dragging='true'] {
   user-select: none;
@@ -162,6 +200,31 @@
   height: 6px;
   border-radius: 50%;
   background: var(--text-dim);
+}
+
+/* ---- preview / diff panes: SurfacePaneChrome --------------------------- */
+
+.pane-surface-icon {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  color: var(--text-dim);
+}
+
+.pane-surface-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+/* GitPanel expects height:100% from a flex/definite-height parent. */
+.pane-surface-fill {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  overflow: hidden;
 }
 .pane[data-status='live'] .pane-dot {
   background: var(--live);

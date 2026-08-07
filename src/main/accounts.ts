@@ -2,7 +2,7 @@ import { app } from 'electron'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { DEFAULT_ACCOUNT_ID, type Account } from '../shared/accounts'
+import { DEFAULT_ACCOUNT_ID, type Account, type AgentVendor } from '../shared/accounts'
 
 /**
  * The Claude accounts this machine knows about.
@@ -86,16 +86,158 @@ function describe(configDir: string): {
   return { plan, tier, email, name, org }
 }
 
+/* ------------------------------------------------------------------------ *
+ * Codex
+ * ------------------------------------------------------------------------ */
+
+/**
+ * What the Codex CLI keeps, and what is safe to look at.
+ *
+ * Codex stores its configuration under `~/.codex` and honours `CODEX_HOME`
+ * when told to look elsewhere — the same shape as Claude Code's
+ * `CLAUDE_CONFIG_DIR`, which is why both share the class below.
+ *
+ * `auth.json` holds an id token whose *payload* names the account and its
+ * plan. That payload is read for the label and nothing else: the token string
+ * is never copied, never written, never sent anywhere, and the signature is
+ * neither read nor verified — this is the same line the Claude reader draws
+ * when it takes `subscriptionType` out of `.credentials.json` and leaves the
+ * credentials themselves alone.
+ *
+ * NOTE: unverified against a live install. The Codex CLI is not present on
+ * the machine this was written on, and the `~/.codex` that *is* there belongs
+ * to ChatGPT Desktop, not the CLI. Everything here is written against Codex's
+ * documented layout and degrades to "not signed in" when the files are shaped
+ * differently — which is exactly what that ChatGPT Desktop directory does.
+ */
+function codexHomeDir(): string {
+  return path.join(os.homedir(), '.codex')
+}
+
+/** The middle segment of a JWT, decoded. Never the signature. */
+function jwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const middle = token.split('.')[1]
+    if (!middle) return null
+    const json = Buffer.from(middle.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')
+    return JSON.parse(json) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+function describeCodex(configDir: string): {
+  plan: string
+  tier: string
+  email: string | null
+  name: string | null
+  org: string | null
+} {
+  const empty = { plan: '', tier: '', email: null, name: null, org: null }
+  let raw: {
+    tokens?: { id_token?: string; account_id?: string }
+    OPENAI_API_KEY?: string | null
+  }
+  try {
+    raw = JSON.parse(fs.readFileSync(path.join(configDir, 'auth.json'), 'utf8'))
+  } catch {
+    // No auth.json at all — including the ChatGPT Desktop directory, which is
+    // why that one correctly reads as an empty, not-signed-in row.
+    return empty
+  }
+
+  // An API-key sign-in has no token to describe, so it is reported as signed
+  // in and otherwise anonymous. The key itself is not read — only whether the
+  // field is populated.
+  if (!raw.tokens?.id_token) {
+    return raw.OPENAI_API_KEY ? { ...empty, plan: 'api' } : empty
+  }
+
+  const claims = jwtPayload(raw.tokens.id_token) ?? {}
+  const authClaim =
+    (claims['https://api.openai.com/auth'] as Record<string, unknown> | undefined) ?? {}
+  const plan = String(authClaim.chatgpt_plan_type ?? '')
+  const email = typeof claims.email === 'string' ? claims.email : null
+
+  return {
+    plan,
+    // Codex has no separate rate-limit tier of its own; the plan is the tier.
+    tier: plan,
+    email,
+    name: typeof claims.name === 'string' ? claims.name : null,
+    org: null
+  }
+}
+
+/* ------------------------------------------------------------------------ *
+ * The shared mechanism
+ * ------------------------------------------------------------------------ */
+
+type Described = ReturnType<typeof describe>
+
+/**
+ * Everything that differs between one agent's accounts and another's.
+ *
+ * Deliberately small: if this grows past "where, what it is called, and how
+ * to read it", the two are not really the same mechanism and should stop
+ * pretending to be.
+ */
+export interface VendorSpec {
+  vendor: AgentVendor
+  /** The directory the agent uses when nothing overrides it. Never written to. */
+  homeDir: () => string
+  /** The environment variable that points a shell at a different one. */
+  envVar: string
+  describe: (configDir: string) => Described
+  /** Where this vendor's index and added accounts live under userData. */
+  indexFile: string
+  rootDir: string
+  /** Shown when an account records no name of its own. */
+  fallbackLabel: string
+}
+
+export const CLAUDE_SPEC: VendorSpec = {
+  vendor: 'claude',
+  homeDir: homeConfigDir,
+  envVar: 'CLAUDE_CONFIG_DIR',
+  describe,
+  indexFile: 'accounts.json',
+  rootDir: 'accounts',
+  fallbackLabel: 'Claude account'
+}
+
+export const CODEX_SPEC: VendorSpec = {
+  vendor: 'codex',
+  homeDir: codexHomeDir,
+  envVar: 'CODEX_HOME',
+  describe: describeCodex,
+  indexFile: 'codex-accounts.json',
+  rootDir: 'codex-accounts',
+  fallbackLabel: 'Codex account'
+}
+
 export class Accounts {
   private index: Index = { activeId: DEFAULT_ACCOUNT_ID, added: [] }
   private readonly file: string
   private readonly root: string
 
-  constructor(dir?: string) {
+  private readonly spec: VendorSpec
+
+  // Defaults to Claude so every existing call site keeps working untouched.
+  constructor(dir?: string, spec: VendorSpec = CLAUDE_SPEC) {
+    this.spec = spec
     const base = dir ?? app.getPath('userData')
-    this.file = path.join(base, 'accounts.json')
-    this.root = path.join(base, 'accounts')
+    this.file = path.join(base, spec.indexFile)
+    this.root = path.join(base, spec.rootDir)
     this.read()
+  }
+
+  /** Which agent these accounts belong to, and how a shell is pointed at one. */
+  get vendor(): AgentVendor {
+    return this.spec.vendor
+  }
+  get envVar(): string {
+    return this.spec.envVar
   }
 
   private read(): void {
@@ -126,7 +268,7 @@ export class Accounts {
   }
 
   private dirFor(id: string): string {
-    return id === DEFAULT_ACCOUNT_ID ? homeConfigDir() : path.join(this.root, id)
+    return id === DEFAULT_ACCOUNT_ID ? this.spec.homeDir() : path.join(this.root, id)
   }
 
   private exists(id: string): boolean {
@@ -142,8 +284,9 @@ export class Accounts {
     ]
     for (const entry of entries) {
       const configDir = this.dirFor(entry.id)
-      const { plan, tier, email, name, org } = describe(configDir)
+      const { plan, tier, email, name, org } = this.spec.describe(configDir)
       rows.push({
+        vendor: this.spec.vendor,
         id: entry.id,
         configDir,
         email,
@@ -152,7 +295,7 @@ export class Accounts {
         tier,
         // Named after whoever it belongs to. The plan is shown beside it, so
         // falling back to the plan here would print it twice.
-        label: email || name || 'Claude account',
+        label: email || name || this.spec.fallbackLabel,
         signedIn: plan !== '',
         active: entry.id === this.index.activeId,
         isDefault: entry.id === DEFAULT_ACCOUNT_ID,
@@ -178,12 +321,12 @@ export class Accounts {
 
   /** Where the active account keeps its transcripts. */
   activeProjectsDir(): string {
-    return path.join(this.activeConfigDir() ?? homeConfigDir(), 'projects')
+    return path.join(this.activeConfigDir() ?? this.spec.homeDir(), 'projects')
   }
 
   /** The active account's credentials file, for the plan and tier. */
   activeCredentialsFile(): string {
-    return path.join(this.activeConfigDir() ?? homeConfigDir(), '.credentials.json')
+    return path.join(this.activeConfigDir() ?? this.spec.homeDir(), '.credentials.json')
   }
 
   setActive(id: string): Account[] {
@@ -212,7 +355,7 @@ export class Accounts {
    * derived from them would cry wolf.
    */
   defaultIdentity(): string {
-    const { email } = describe(homeConfigDir())
+    const { email } = this.spec.describe(this.spec.homeDir())
     try {
       const conf = JSON.parse(
         fs.readFileSync(path.join(os.homedir(), '.claude.json'), 'utf8')
@@ -239,7 +382,7 @@ export class Accounts {
    */
   commit(id: string): Account[] {
     const configDir = this.dirFor(id)
-    if (describe(configDir).plan === '') {
+    if (this.spec.describe(configDir).plan === '') {
       this.discard(id)
       return this.list()
     }

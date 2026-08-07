@@ -10,6 +10,30 @@ const SKIP_DIRS = new Set([
 
 const MAX_READ = 2 * 1024 * 1024
 
+/**
+ * Images and PDFs are legitimately bigger than the text cap, but a multi-
+ * hundred-megabyte file base64-encoded and sent whole across IPC would still
+ * jank the renderer on receipt — so this is generous, not unlimited.
+ */
+const MAX_BINARY_READ = 24 * 1024 * 1024
+
+/** Extensions the preview pane knows what to do with. Nothing else is guessed at. */
+const MIME_BY_EXT: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.bmp': 'image/bmp',
+  '.avif': 'image/avif',
+  '.pdf': 'application/pdf'
+}
+
+export function mimeFor(file: string): string | null {
+  return MIME_BY_EXT[path.extname(file).toLowerCase()] ?? null
+}
+
 export async function listDir(dir: string): Promise<DirEntry[]> {
   const entries = await fs.readdir(dir, { withFileTypes: true })
   const out: DirEntry[] = []
@@ -51,6 +75,39 @@ export async function readFile(file: string): Promise<{ text: string; truncated:
     throw new Error('Binary file — Eaon can’t show this one.')
   }
   return { text: buf.toString('utf8'), truncated: false }
+}
+
+/**
+ * Bytes, for the one class of file that is never valid UTF-8 text: images and
+ * PDFs. `readFile` refuses these on sight — the NUL check that keeps a
+ * genuinely binary file out of the text editor also keeps every image and
+ * PDF out — so a preview needs a door of its own.
+ *
+ * Returned as base64 because that is what has to happen to the bytes anyway:
+ * the renderer's Content-Security-Policy admits `data:`/`blob:` sources but
+ * not `file:`, so a `file://` src is silently dropped and nothing this
+ * function's *caller* does can fix that — the bytes have to cross the IPC
+ * bridge and become a `data:` URL, the same trip `saveDropped` already makes
+ * in the other direction for a dropped image with no path of its own.
+ */
+export async function readBinary(
+  file: string
+): Promise<{ base64: string; mime: string; truncated: boolean }> {
+  const mime = mimeFor(file)
+  if (!mime) throw new Error('Not a previewable file type.')
+
+  const stat = await fs.stat(file)
+  if (stat.size > MAX_BINARY_READ) {
+    // A truncated image or PDF is not a smaller version of the real one —
+    // both formats need their own trailer/footer bytes to decode at all — so
+    // this is a refusal, not a partial read the way the text path allows.
+    throw new Error(
+      `That file is ${Math.round(stat.size / 1024 / 1024)} MB, over the ${Math.round(MAX_BINARY_READ / 1024 / 1024)} MB preview limit.`
+    )
+  }
+
+  const buf = await fs.readFile(file)
+  return { base64: buf.toString('base64'), mime, truncated: false }
 }
 
 export async function writeFile(file: string, text: string): Promise<void> {

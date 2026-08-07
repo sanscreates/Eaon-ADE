@@ -9,6 +9,10 @@ import type { SpeechSupport, SystemVoice } from '../shared/speech'
 import type { UpdateState } from '../shared/update'
 import type { UsageReport } from '../shared/usage'
 import type { Account, LoginState } from '../shared/accounts'
+import type { ProviderState } from '../shared/integrations'
+import type { Worktree, WorktreeChange } from '../shared/worktrees'
+import type { SshHost } from '../shared/ssh'
+import type { LinearTeam, TaskFetch } from '../shared/tasks'
 import type { Stats } from '../shared/stats'
 import type { BrainGraph, BrainStats, Memory, MemoryMeta, SearchHit } from '../shared/brain'
 import type {
@@ -74,6 +78,16 @@ const api = {
     list: (dir: string): Promise<DirEntry[]> => ipcRenderer.invoke('fs:list', dir),
     read: (file: string): Promise<{ text: string; truncated: boolean }> =>
       ipcRenderer.invoke('fs:read', file),
+    /**
+     * Bytes, for images and PDFs — the one class of file `read` refuses on
+     * sight. Base64, because a `data:` URL is the only source the renderer's
+     * CSP admits; `file://` is silently blocked regardless of what the
+     * component does with it.
+     */
+    readBinary: (file: string): Promise<{ base64: string; mime: string; truncated: boolean }> =>
+      ipcRenderer.invoke('fs:readBinary', file),
+    /** Null for anything that is not a previewable image/PDF extension. */
+    mime: (file: string): Promise<string | null> => ipcRenderer.invoke('fs:mime', file),
     write: (file: string, text: string): Promise<void> =>
       ipcRenderer.invoke('fs:write', file, text),
     search: (root: string, q: string): Promise<DirEntry[]> =>
@@ -102,22 +116,135 @@ const api = {
       ipcRenderer.invoke('fs:saveDropped', name, bytes)
   },
 
+  /**
+   * Every method's trailing `host` runs it over ssh when given a workspace's
+   * remote host, and locally — exactly as before this existed — when it is
+   * omitted.
+   */
   git: {
-    status: (cwd: string): Promise<GitStatus> => ipcRenderer.invoke('git:status', cwd),
-    branch: (cwd: string): Promise<string | null> => ipcRenderer.invoke('git:branch', cwd),
-    diff: (cwd: string, file: string, staged: boolean): Promise<string> =>
-      ipcRenderer.invoke('git:diff', cwd, file, staged),
-    stage: (cwd: string, file: string): Promise<void> => ipcRenderer.invoke('git:stage', cwd, file),
-    unstage: (cwd: string, file: string): Promise<void> =>
-      ipcRenderer.invoke('git:unstage', cwd, file),
-    stageAll: (cwd: string): Promise<void> => ipcRenderer.invoke('git:stageAll', cwd),
-    commit: (cwd: string, msg: string): Promise<string> =>
-      ipcRenderer.invoke('git:commit', cwd, msg),
-    log: (cwd: string): Promise<LogEntry[]> => ipcRenderer.invoke('git:log', cwd)
+    status: (cwd: string, host?: SshHost | null): Promise<GitStatus> =>
+      ipcRenderer.invoke('git:status', cwd, host),
+    branch: (cwd: string, host?: SshHost | null): Promise<string | null> =>
+      ipcRenderer.invoke('git:branch', cwd, host),
+    diff: (cwd: string, file: string, staged: boolean, host?: SshHost | null): Promise<string> =>
+      ipcRenderer.invoke('git:diff', cwd, file, staged, host),
+    stage: (cwd: string, file: string, host?: SshHost | null): Promise<void> =>
+      ipcRenderer.invoke('git:stage', cwd, file, host),
+    unstage: (cwd: string, file: string, host?: SshHost | null): Promise<void> =>
+      ipcRenderer.invoke('git:unstage', cwd, file, host),
+    stageAll: (cwd: string, host?: SshHost | null): Promise<void> =>
+      ipcRenderer.invoke('git:stageAll', cwd, host),
+    commit: (cwd: string, msg: string, host?: SshHost | null): Promise<string> =>
+      ipcRenderer.invoke('git:commit', cwd, msg, host),
+    log: (cwd: string, host?: SshHost | null): Promise<LogEntry[]> =>
+      ipcRenderer.invoke('git:log', cwd, host)
+  },
+
+  /**
+   * Codex accounts. The same directory-per-account mechanism as Claude's, but
+   * without a sign-in flow: `codex login` writes into whatever CODEX_HOME
+   * points at, so `reserve` makes the directory and a pane opened in it does
+   * the rest.
+   */
+  codexAccounts: {
+    list: (): Promise<Account[]> => ipcRenderer.invoke('codexAccounts:list'),
+    setActive: (id: string): Promise<Account[]> =>
+      ipcRenderer.invoke('codexAccounts:setActive', id),
+    remove: (id: string): Promise<Account[]> => ipcRenderer.invoke('codexAccounts:remove', id),
+    reserve: (): Promise<{ id: string; configDir: string }> =>
+      ipcRenderer.invoke('codexAccounts:reserve'),
+    commit: (id: string): Promise<Account[]> => ipcRenderer.invoke('codexAccounts:commit', id)
+  },
+
+  /**
+   * Work waiting for you: pull requests, issues, Linear tickets.
+   *
+   * Every reply is normalised `WorkItem`s. No provider credential is part of
+   * any of them — the Linear key stays in the main process, which is checked
+   * with canary values rather than assumed.
+   */
+  tasks: {
+    list: (cwd: string): Promise<TaskFetch> => ipcRenderer.invoke('tasks:list', cwd),
+    approvePr: (
+      cwd: string,
+      number: number,
+      body?: string
+    ): Promise<{ ok: boolean; message: string }> =>
+      ipcRenderer.invoke('tasks:approvePr', cwd, number, body),
+    linearTeams: (): Promise<LinearTeam[]> => ipcRenderer.invoke('tasks:linearTeams'),
+    createLinearIssue: (input: {
+      teamId: string
+      title: string
+      description?: string
+    }): Promise<{ ok: boolean; message: string; url?: string }> =>
+      ipcRenderer.invoke('tasks:createLinearIssue', input)
+  },
+
+  /** Remote boxes: reading `~/.ssh/config` for the connect picker. */
+  ssh: {
+    listConfigHosts: (): Promise<SshHost[]> => ipcRenderer.invoke('ssh:listConfigHosts')
   },
 
   agents: {
-    detect: (): Promise<AgentDef[]> => ipcRenderer.invoke('agents:detect')
+    detect: (): Promise<AgentDef[]> => ipcRenderer.invoke('agents:detect'),
+    /** Same question, asked of a remote host's PATH instead of this machine's. */
+    detectRemote: (host: SshHost): Promise<AgentDef[]> =>
+      ipcRenderer.invoke('agents:detectRemote', host)
+  },
+
+  /**
+   * Connected services. Both calls return names, statuses and the names of the
+   * variables involved — never a value. `refresh` re-reads the login shell
+   * first, which is the only reason to prefer it over `list`.
+   */
+  integrations: {
+    list: (): Promise<ProviderState[]> => ipcRenderer.invoke('integrations:list'),
+    refresh: (): Promise<ProviderState[]> => ipcRenderer.invoke('integrations:refresh')
+  },
+
+  /**
+   * Isolated checkouts, one per task — local, or on a remote box when `host`
+   * is given.
+   *
+   * `baseSha` is passed on every comparison rather than looked up, so a trial
+   * keeps measuring against the commit it actually started from even if the
+   * branch it was cut from moves on while the agents are still working.
+   */
+  worktrees: {
+    root: (cwd: string, host?: SshHost | null): Promise<string | null> =>
+      ipcRenderer.invoke('worktrees:root', cwd, host),
+    list: (cwd: string, host?: SshHost | null): Promise<Worktree[]> =>
+      ipcRenderer.invoke('worktrees:list', cwd, host),
+    create: (
+      req: { cwd: string; branch: string; baseRef?: string; existing?: boolean },
+      host?: SshHost | null
+    ): Promise<{ ok: boolean; worktree?: Worktree; baseSha?: string; error?: string }> =>
+      ipcRenderer.invoke('worktrees:create', req, host),
+    change: (dir: string, baseSha: string, host?: SshHost | null): Promise<WorktreeChange> =>
+      ipcRenderer.invoke('worktrees:change', dir, baseSha, host),
+    diff: (dir: string, baseSha: string, host?: SshHost | null): Promise<string> =>
+      ipcRenderer.invoke('worktrees:diff', dir, baseSha, host),
+    commitAll: (
+      dir: string,
+      message: string,
+      host?: SshHost | null
+    ): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('worktrees:commitAll', dir, message, host),
+    merge: (
+      cwd: string,
+      branch: string,
+      host?: SshHost | null
+    ): Promise<{ ok: boolean; conflicts: string[]; message: string }> =>
+      ipcRenderer.invoke('worktrees:merge', cwd, branch, host),
+    remove: (
+      cwd: string,
+      dir: string,
+      opts?: { force?: boolean; deleteBranch?: boolean },
+      host?: SshHost | null
+    ): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('worktrees:remove', cwd, dir, opts ?? {}, host),
+    prune: (cwd: string, host?: SshHost | null): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('worktrees:prune', cwd, host)
   },
 
   sessions: {
@@ -129,7 +256,10 @@ const api = {
   usage: {
     read: (opts: { fromAnthropic: boolean; session: number; week: number }): Promise<UsageReport> =>
       ipcRenderer.invoke('usage:read', opts),
-    forget: (): void => ipcRenderer.send('usage:forget')
+    forget: (): void => ipcRenderer.send('usage:forget'),
+    /** The same figures for Codex, read from its rollouts. */
+    codex: (opts: { session?: number; week?: number }): Promise<UsageReport> =>
+      ipcRenderer.invoke('usage:codex', opts)
   },
 
   /**

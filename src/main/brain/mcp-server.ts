@@ -53,6 +53,17 @@ function text(body: string): { content: { type: 'text'; text: string }[] } {
   return { content: [{ type: 'text', text: body }] }
 }
 
+/**
+ * `isError: true` on the result — not a protocol-level failure, but a tool
+ * call that did not do what it says. Distinct from `text()` for exactly one
+ * reason: it is the signal a model reliably treats as "this needs fixing and
+ * retrying" rather than as data to act on, which a validation failure most
+ * certainly is not.
+ */
+function errorText(body: string): { content: { type: 'text'; text: string }[]; isError: true } {
+  return { content: [{ type: 'text', text: body }], isError: true }
+}
+
 const TOOLS = [
   {
     name: 'brain_search',
@@ -122,7 +133,7 @@ const TOOLS = [
   }
 ]
 
-function call(name: string, args: Record<string, unknown>): ReturnType<typeof text> {
+function call(name: string, args: Record<string, unknown>): ReturnType<typeof text> | ReturnType<typeof errorText> {
   switch (name) {
     case 'brain_search': {
       const hits = store.search(String(args.query ?? ''), Number(args.limit) || 10)
@@ -164,12 +175,32 @@ function call(name: string, args: Record<string, unknown>): ReturnType<typeof te
     }
 
     case 'brain_write': {
+      // A missing or malformed `content` used to fall through to
+      // `String(undefined ?? '')` and quietly save an empty note — a call
+      // that looked like it worked (a title, a saved-to path) while the one
+      // thing worth keeping never made it to disk. The model gets no signal
+      // something went wrong until a future session opens an empty file, by
+      // which point whatever it had learned is already gone. Reject instead,
+      // with enough detail that a retry fixes it on the first try.
+      const title = String(args.title ?? '').trim()
+      if (!title) return errorText('brain_write needs a non-empty "title".')
+      if (typeof args.content !== 'string' || !args.content.trim()) {
+        // The one mistake worth naming specifically: "body" is the obvious
+        // guess for "the text of the note" and it is wrong often enough that
+        // a generic "content is required" would leave the actual fix unsaid.
+        const gotBodyInstead = typeof (args as { body?: unknown }).body === 'string'
+        return errorText(
+          gotBodyInstead
+            ? 'brain_write takes "content", not "body" — the note was not saved. Retry with the same text under "content".'
+            : 'brain_write needs a non-empty "content" (the markdown body of the note) — nothing was saved.'
+        )
+      }
       const saved = store.write({
-        title: String(args.title ?? ''),
-        content: String(args.content ?? ''),
+        title,
+        content: args.content,
         tags: Array.isArray(args.tags) ? (args.tags as string[]).map(String) : undefined
       })
-      if (!saved) return text('Could not write — no workspace folder is available.')
+      if (!saved) return errorText('Could not write — no workspace folder is available.')
       const unresolved = saved.unresolved.length
         ? ` ${saved.unresolved.length} link(s) point at memories that do not exist yet: ${saved.unresolved.join(', ')}.`
         : ''

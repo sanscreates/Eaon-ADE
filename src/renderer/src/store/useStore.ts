@@ -9,6 +9,7 @@ import {
   HUES,
   NAME_POOL,
   PANEL_LABEL,
+  type PaneKind,
   type PaneSpec,
   type PaneStatus,
   type PersistedState,
@@ -22,13 +23,16 @@ import {
   type WorkspaceFolder,
   type WorkspaceKind
 } from '@shared/types'
+import { memberLabel, slugify, type Trial, type TrialMember } from '@shared/worktrees'
+import { hostLabel, type SshHost } from '@shared/ssh'
+import { branchNameFor, type WorkItem } from '@shared/tasks'
 import type { DownloadProgress, InstalledModel, SttEngineState } from '@shared/stt'
 import { IDLE_UPDATE_STATE, type UpdateState } from '@shared/update'
 import { terminals } from '../lib/terminals'
 import { forgetPane } from '../lib/speech'
 import { basename, uid } from '../lib/util'
 
-export type DockTab = 'browser' | 'editor' | 'git' | 'tools'
+export type DockTab = 'browser' | 'editor' | 'git' | 'work' | 'tools'
 
 /** The workspace kinds that hold a surface rather than shells. */
 export type PanelKind = Exclude<WorkspaceKind, 'terminals'>
@@ -51,6 +55,18 @@ export interface WizardDraft {
   agentId: string
   prompt: string
   presetId: string | null
+  /**
+   * Give every pane its own checkout instead of pointing them all at the same
+   * folder. Without it, five agents told to do the same thing edit the same
+   * files at the same time and produce one incoherent result.
+   */
+  isolate: boolean
+  /**
+   * Run against a remote box instead of a local folder. When set, `cwd` is a
+   * path on that host, not on this machine — there is no folder browser for
+   * it yet, so it is typed in.
+   */
+  host: SshHost | null
 }
 
 interface AppState {
@@ -68,6 +84,8 @@ interface AppState {
   board: BoardCard[]
   vault: VaultNote[]
   dismissedResume: string[]
+  /** Isolated runs, keyed to the workspace that holds their panes. */
+  trials: Trial[]
 
   wizard: WizardDraft | null
   railOpen: boolean
@@ -110,6 +128,28 @@ interface AppState {
   updateWizard: (patch: Partial<WizardDraft>) => void
   closeWizard: () => void
   createWorkspace: (draft: WizardDraft) => void
+  /**
+   * The same thing, but every pane gets its own checkout first.
+   *
+   * Async and fallible where `createWorkspace` is neither, because it has to
+   * talk to git: the folder may not be a repository, and a worktree may fail
+   * to cut. Nothing is added to the rail unless every member was created, so a
+   * half-made trial cannot be left on screen.
+   */
+  createTrial: (draft: WizardDraft) => Promise<{ ok: boolean; error?: string }>
+  /** Commit a member's work, merge its branch, and clear the trial away. */
+  mergeTrialMember: (
+    trialId: string,
+    memberId: string
+  ) => Promise<{ ok: boolean; conflicts: string[]; message: string }>
+  /** Throw the whole trial away, checkouts and branches with it. */
+  discardTrial: (trialId: string) => Promise<void>
+  /**
+   * Open an isolated checkout for a pull request or issue, and a workspace on
+   * it. A PR's head branch already exists and is checked out as it stands; an
+   * issue has only a suggested name, so a fresh branch is cut for it.
+   */
+  openWorkItem: (item: WorkItem) => Promise<{ ok: boolean; error?: string }>
 
   setActiveWorkspace: (id: string) => void
   closeWorkspace: (id: string) => void
@@ -128,7 +168,15 @@ interface AppState {
 
   addPane: (
     workspaceId: string,
-    opts?: { agentId?: string; command?: string | null; cwd?: string }
+    opts?: {
+      agentId?: string
+      command?: string | null
+      cwd?: string
+      /** 'preview' | 'diff' skip agent/session setup entirely — see addPane. */
+      kind?: PaneKind
+      /** kind: 'preview' only. */
+      previewPath?: string
+    }
   ) => void
   resumeSessions: (sessions: ResumableSession[]) => void
   closePane: (workspaceId: string, paneId: string) => void
@@ -244,6 +292,7 @@ export const useStore = create<AppState>((set, get) => ({
   board: [],
   vault: [],
   dismissedResume: [],
+  trials: [],
 
   wizard: null,
   railOpen: true,
@@ -342,7 +391,8 @@ export const useStore = create<AppState>((set, get) => ({
       settings: { ...DEFAULT_SETTINGS, ...savedSettings },
       board: saved.board ?? [],
       vault: saved.vault ?? [],
-      dismissedResume: saved.dismissedResume ?? []
+      dismissedResume: saved.dismissedResume ?? [],
+      trials: saved.trials ?? []
     })
 
     void get().refreshStt()
@@ -398,7 +448,8 @@ export const useStore = create<AppState>((set, get) => ({
         settings: s.settings,
         board: s.board,
         vault: s.vault,
-        dismissedResume: s.dismissedResume
+        dismissedResume: s.dismissedResume,
+        trials: s.trials
       }
       window.eaon.state.save(snapshot)
     }, 400)
@@ -414,7 +465,9 @@ export const useStore = create<AppState>((set, get) => ({
         layout: preset?.layout ?? (mode === 'swarm' ? 4 : 1),
         agentId: preset?.agentId ?? s.settings.defaultAgentId,
         prompt: preset?.prompt ?? '',
-        presetId: preset?.id ?? null
+        presetId: preset?.id ?? null,
+        isolate: false,
+        host: null
       }
     })
   },
@@ -434,7 +487,7 @@ export const useStore = create<AppState>((set, get) => ({
     const names = pickNames(draft.layout, s.workspaces.flatMap((w) => w.panes.map((p) => p.name)))
     const workspace: Workspace = {
       id: uid('w_'),
-      name: basename(draft.cwd) || 'Workspace',
+      name: (draft.host ? hostLabel(draft.host) : basename(draft.cwd)) || 'Workspace',
       cwd: draft.cwd,
       kind: 'terminals',
       hue: nextHue(s.workspaces),
@@ -445,7 +498,8 @@ export const useStore = create<AppState>((set, get) => ({
       activePaneId: null,
       zoomedPaneId: null,
       folderId: null,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      host: draft.host
     }
     workspace.activePaneId = workspace.panes[0]?.id ?? null
     if (draft.prompt.trim() && draft.agentId !== 'shell') {
@@ -457,8 +511,212 @@ export const useStore = create<AppState>((set, get) => ({
       activeWorkspaceId: workspace.id,
       wizard: null
     })
-    get().touchRecent(draft.cwd)
+    // A remote path is not a local folder to suggest back in the picker.
+    if (!draft.host) get().touchRecent(draft.cwd)
     get().persist()
+  },
+
+  async createTrial(draft) {
+    const s = get()
+    const host = draft.host ?? null
+    const root = await window.eaon.worktrees.root(draft.cwd, host)
+    if (!root) {
+      return {
+        ok: false,
+        error: host
+          ? 'That path is not a git repository on the remote host, so there is nothing to isolate.'
+          : 'That folder is not a git repository, so there is nothing to isolate.'
+      }
+    }
+
+    const count = Math.max(1, draft.layout)
+    const slug = slugify(draft.prompt || basename(draft.cwd), 'trial')
+    // Two trials of the same prompt in one afternoon must not collide on a
+    // branch name, and the user should still be able to read what it was.
+    const stamp = Date.now().toString(36).slice(-4)
+    const baseRef = (await window.eaon.git.branch(root, host)) ?? 'HEAD'
+
+    const members: TrialMember[] = []
+    let baseSha = ''
+
+    for (let i = 0; i < count; i++) {
+      const label = memberLabel(i)
+      const branch = `eaon/${slug}-${stamp}/${label.toLowerCase()}`
+      const made = await window.eaon.worktrees.create({ cwd: root, branch }, host)
+      if (!made.ok || !made.worktree) {
+        // Undo the ones already cut. A half-made trial on screen would be
+        // worse than none: some agents isolated, some not, no way to tell.
+        for (const done of members) {
+          await window.eaon.worktrees.remove(
+            root,
+            done.path,
+            { force: true, deleteBranch: true },
+            host
+          )
+        }
+        return { ok: false, error: made.error ?? 'Could not create a worktree.' }
+      }
+      baseSha = made.baseSha ?? baseSha
+      members.push({
+        id: uid('tm_'),
+        agentId: draft.agentId,
+        label,
+        branch,
+        path: made.worktree.path,
+        paneId: null
+      })
+    }
+
+    const names = pickNames(count, s.workspaces.flatMap((w) => w.panes.map((p) => p.name)))
+    const panes = members.map((m, i) => makePane(names[i], m.path, draft.agentId))
+    members.forEach((m, i) => {
+      m.paneId = panes[i].id
+    })
+
+    const workspace: Workspace = {
+      id: uid('w_'),
+      name: `${(host ? hostLabel(host) : basename(draft.cwd)) || 'Workspace'} · trial`,
+      cwd: draft.cwd,
+      kind: 'terminals',
+      hue: nextHue(s.workspaces),
+      layout: count,
+      panes,
+      grid: null,
+      activePaneId: panes[0]?.id ?? null,
+      zoomedPaneId: null,
+      folderId: null,
+      createdAt: Date.now(),
+      host
+    }
+
+    const trial: Trial = {
+      id: uid('t_'),
+      workspaceId: workspace.id,
+      prompt: draft.prompt.trim(),
+      repoRoot: root,
+      baseSha,
+      baseRef,
+      members,
+      winnerId: null,
+      createdAt: Date.now(),
+      host
+    }
+
+    if (draft.prompt.trim() && draft.agentId !== 'shell') {
+      pendingPrompts.set(workspace.id, draft.prompt.trim())
+    }
+
+    set({
+      workspaces: [...s.workspaces, workspace],
+      trials: [...s.trials, trial],
+      activeWorkspaceId: workspace.id,
+      wizard: null
+    })
+    if (!host) get().touchRecent(draft.cwd)
+    get().persist()
+    return { ok: true }
+  },
+
+  async mergeTrialMember(trialId, memberId) {
+    const trial = get().trials.find((t) => t.id === trialId)
+    const member = trial?.members.find((m) => m.id === memberId)
+    if (!trial || !member) {
+      return { ok: false, conflicts: [], message: 'That attempt is no longer here.' }
+    }
+    const host = trial.host ?? null
+
+    // Agents routinely stop with the work saved but not committed, and a
+    // branch in that state cannot be merged at all.
+    const subject = trial.prompt.split('\n')[0].slice(0, 60) || 'Trial'
+    const committed = await window.eaon.worktrees.commitAll(
+      member.path,
+      `${subject} (${member.label})`,
+      host
+    )
+    if (!committed.ok) {
+      return { ok: false, conflicts: [], message: committed.error ?? 'Could not commit the work.' }
+    }
+
+    const merged = await window.eaon.worktrees.merge(trial.repoRoot, member.branch, host)
+    if (!merged.ok) return merged
+
+    set({
+      trials: get().trials.map((t) => (t.id === trialId ? { ...t, winnerId: memberId } : t))
+    })
+    get().persist()
+    return merged
+  },
+
+  async openWorkItem(item) {
+    const s = get()
+    const active = s.workspaces.find((w) => w.id === s.activeWorkspaceId)
+    // Which repository this belongs to is the workspace you are looking at —
+    // work items are fetched for that repo in the first place.
+    const cwd = active?.cwd ?? s.home
+    const host = active?.host ?? null
+
+    const root = await window.eaon.worktrees.root(cwd, host)
+    if (!root) {
+      return { ok: false, error: 'This workspace is not a git repository, so there is nothing to check out.' }
+    }
+
+    const branch = item.branch ?? branchNameFor(item)
+    const made = await window.eaon.worktrees.create(
+      { cwd: root, branch, existing: item.branchExists },
+      host
+    )
+    if (!made.ok || !made.worktree) {
+      return { ok: false, error: made.error ?? 'Could not open a checkout.' }
+    }
+
+    const names = pickNames(1, s.workspaces.flatMap((w) => w.panes.map((p) => p.name)))
+    const pane = makePane(names[0], made.worktree.path, s.settings.defaultAgentId)
+    const workspace: Workspace = {
+      id: uid('w_'),
+      // The ref is what you were looking at in the list, so it is what the
+      // rail should say — a slugified branch name would be a worse label for
+      // the same thing.
+      name: `${item.ref} ${item.title}`.slice(0, 48),
+      cwd: made.worktree.path,
+      kind: 'terminals',
+      hue: nextHue(s.workspaces),
+      layout: 1,
+      panes: [pane],
+      grid: null,
+      activePaneId: pane.id,
+      zoomedPaneId: null,
+      folderId: null,
+      createdAt: Date.now(),
+      host
+    }
+
+    set({
+      workspaces: [...s.workspaces, workspace],
+      activeWorkspaceId: workspace.id
+    })
+    get().persist()
+    return { ok: true }
+  },
+
+  async discardTrial(trialId) {
+    const trial = get().trials.find((t) => t.id === trialId)
+    if (!trial) return
+    const host = trial.host ?? null
+
+    for (const m of trial.members) {
+      // Force, because a losing attempt is dirty by definition — that is what
+      // makes it an attempt rather than a branch.
+      await window.eaon.worktrees.remove(
+        trial.repoRoot,
+        m.path,
+        { force: true, deleteBranch: true },
+        host
+      )
+    }
+    await window.eaon.worktrees.prune(trial.repoRoot, host)
+
+    set({ trials: get().trials.filter((t) => t.id !== trialId) })
+    get().closeWorkspace(trial.workspaceId)
   },
 
   setActiveWorkspace(id) {
@@ -586,8 +844,31 @@ export const useStore = create<AppState>((set, get) => ({
         if (w.id !== workspaceId) return w
         const taken = s.workspaces.flatMap((x) => x.panes.map((p) => p.name))
         const [name] = pickNames(1, taken)
-        const pane = makePane(name, opts?.cwd ?? w.cwd, opts?.agentId ?? s.settings.defaultAgentId)
-        if (opts?.command !== undefined) pane.command = opts.command
+        const pane =
+          opts?.kind && opts.kind !== 'terminal'
+            ? // A preview or diff pane has nothing to spawn — it is a surface,
+              // not a shell — so it skips makePane's agent/session machinery
+              // entirely rather than constructing one it will never use.
+              {
+                id: uid('p_'),
+                kind: opts.kind,
+                name,
+                title: null,
+                cwd: opts?.cwd ?? w.cwd,
+                agentId: 'shell',
+                command: null,
+                sessionId: null,
+                status: 'idle' as const,
+                working: false,
+                branch: null,
+                contextPct: null,
+                createdAt: Date.now(),
+                previewPath: opts.kind === 'preview' ? (opts.previewPath ?? null) : null
+              }
+            : makePane(name, opts?.cwd ?? w.cwd, opts?.agentId ?? s.settings.defaultAgentId)
+        if (opts?.command !== undefined && (!opts?.kind || opts.kind === 'terminal')) {
+          pane.command = opts.command
+        }
         return { ...w, panes: [...w.panes, pane], activePaneId: pane.id, layout: w.panes.length + 1 }
       })
     })
@@ -717,7 +998,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   restartPane(paneId) {
     const s = get()
-    const pane = s.workspaces.flatMap((w) => w.panes).find((p) => p.id === paneId)
+    const workspace = s.workspaces.find((w) => w.panes.some((p) => p.id === paneId))
+    const pane = workspace?.panes.find((p) => p.id === paneId)
     if (!pane) return
     get().patchPane(paneId, { status: 'idle', working: false, contextPct: null, title: null })
     // The registry does the swap: the pane component mounted once and will not
@@ -725,7 +1007,12 @@ export const useStore = create<AppState>((set, get) => ({
     terminals.restart(
       paneId,
       pane.cwd,
-      { command: pane.command, agentId: pane.agentId, sessionId: pane.sessionId },
+      {
+        command: pane.command,
+        agentId: pane.agentId,
+        sessionId: pane.sessionId,
+        host: workspace?.host
+      },
       get().settings
     )
   },

@@ -4,6 +4,8 @@ import path from 'node:path'
 import { app } from 'electron'
 import * as pty from 'node-pty'
 import type { SpawnRequest } from '../shared/types'
+import { remoteShellCommand, sshArgv } from './ssh'
+import { isProvisioned } from './brain/register'
 
 /**
  * Variables that describe whatever launched Eaon rather than the terminal we
@@ -55,6 +57,8 @@ interface Session {
   /** Unique per spawn, so a restarted pane never settles the old one's wait. */
   token: number
   pid: number
+  /** Whether this shell is `ssh`, not a local process — see spawn(). */
+  remote: boolean
 }
 
 type Sender = (channel: string, payload: unknown) => void
@@ -164,7 +168,7 @@ export class PtyManager {
   }
 
   /** The environment a freshly opened terminal window would actually have. */
-  private buildEnv(paneId: string): Record<string, string> {
+  private buildEnv(paneId: string, cwd: string): Record<string, string> {
     const env: Record<string, string> = {}
     for (const [key, value] of Object.entries(process.env)) {
       if (value === undefined) continue
@@ -199,6 +203,45 @@ export class PtyManager {
     const configDir = this.configDir()
     if (configDir) env.CLAUDE_CONFIG_DIR = configDir
 
+    // The same bargain for Codex, which reads CODEX_HOME. Unset means "use
+    // ~/.codex exactly as any other terminal would", which is why the default
+    // account contributes nothing here rather than naming its own directory.
+    const codexHome = this.codexHome()
+    if (codexHome) env.CODEX_HOME = codexHome
+
+    /*
+     * Claude Code has its own built-in per-machine memory, and by default a
+     * session reaches for it before ever considering a skill — plain `Write`
+     * into `~/.claude/projects/<hash>/memory/`, never a tool call the eaon-brain
+     * skill could redirect. That defeats the entire point of the shared, in-repo
+     * brain: what gets written is private to this machine and this CLI, invisible
+     * to Codex or Gemini, invisible in the Brain panel, and never committed.
+     *
+     * `CLAUDE_CODE_DISABLE_AUTO_MEMORY` is Claude Code's own documented escape
+     * hatch (see `claude --help`, and what `--bare` turns off). With it set, a
+     * session with something to say reaches for the eaon-brain skill instead —
+     * confirmed by running real sessions both ways: unset, a session writes
+     * straight to its own store and never touches the skill; set, in a
+     * provisioned workspace, it searches the brain, then writes there.
+     *
+     * Scoped to workspaces we provisioned, not set globally: turning off a
+     * feature with nothing to redirect to would just be a regression for a pane
+     * opened in an unprovisioned folder, or for any other agent, which will
+     * ignore an env var it has never heard of either way.
+     */
+    if (isProvisioned(cwd)) env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1'
+
+    /*
+     * Service credentials, so an agent can push or read an issue without being
+     * handed a token in the prompt. These come from the login shell rather than
+     * from our own environment, so they are added last but never over an
+     * existing value — a token exported in the terminal that launched the app
+     * is the one the user meant.
+     */
+    for (const [key, value] of Object.entries(this.extraEnv())) {
+      if (!env[key]) env[key] = value
+    }
+
     return env
   }
 
@@ -212,19 +255,48 @@ export class PtyManager {
     this.configDir = fn
   }
 
+  /** The active Codex account's home, asked at spawn time for the same reason. */
+  private codexHome: () => string | null = () => null
+
+  setCodexHome(fn: () => string | null): void {
+    this.codexHome = fn
+  }
+
+  /** Extra environment for new panes, asked at spawn time for the same reason. */
+  private extraEnv: () => Record<string, string> = () => ({})
+
+  setExtraEnv(fn: () => Record<string, string>): void {
+    this.extraEnv = fn
+  }
+
   spawn(req: SpawnRequest): { ok: boolean; error?: string } {
     this.kill(req.paneId)
 
-    const shell = req.shell?.trim() || this.defaultShell()
+    const remoteHost = req.host ?? null
     const cwd = req.cwd && req.cwd.length ? req.cwd : os.homedir()
 
+    /*
+     * A remote pane's local child process is `ssh` itself, not a shell — the
+     * remote directory and the remote login shell are both baked into the
+     * single command string ssh is told to run (remoteShellCommand), the
+     * exact way a person would type `ssh host` and land there themselves.
+     * The local `cwd` node-pty is given is irrelevant to that and is only
+     * ever a valid directory for the `ssh` process to have been launched
+     * from — the home directory is as good as any other.
+     */
+    const shell = remoteHost ? 'ssh' : req.shell?.trim() || this.defaultShell()
+    const spawnCwd = remoteHost ? os.homedir() : cwd
+    const localArgs = remoteHost
+      ? [...sshArgv(remoteHost, { interactive: true }), remoteShellCommand(cwd)]
+      : this.shellArgs(shell)
+
     try {
-      const proc = pty.spawn(shell, this.shellArgs(shell), {
+      const proc = pty.spawn(shell, localArgs, {
         name: 'xterm-256color',
         cols: Math.max(20, req.cols || 80),
         rows: Math.max(5, req.rows || 24),
-        cwd,
-        env: this.buildEnv(req.paneId)
+        cwd: spawnCwd,
+        env: this.buildEnv(req.paneId, cwd)
       })
 
       const session: Session = {
@@ -237,7 +309,8 @@ export class PtyManager {
         commandTimer: null,
         sawOutput: false,
         token: this.nextToken++,
-        pid: proc.pid
+        pid: proc.pid,
+        remote: Boolean(remoteHost)
       }
       this.sessions.set(req.paneId, session)
 
@@ -245,9 +318,15 @@ export class PtyManager {
         try {
           // Type the launch command once the shell has actually printed a
           // prompt. A dozen shells starting at once makes fixed delays unsafe.
+          // A remote session's first byte is usually ssh's own handshake
+          // noise or the start of an MOTD banner, not a ready prompt, so it
+          // gets a longer wait — the kernel pty on the far end buffers
+          // keystrokes typed before the remote shell reads them, same as
+          // type-ahead in any terminal, but a banner that pauses for
+          // acknowledgement is not worth risking on a tight local timing.
           if (session.pendingCommand && !session.sawOutput) {
             session.sawOutput = true
-            this.scheduleCommand(session, 400)
+            this.scheduleCommand(session, session.remote ? 1200 : 400)
           }
 
           session.buffer.push(chunk)
@@ -298,7 +377,7 @@ export class PtyManager {
       })
 
       // Fallback for shells that print nothing at all before their prompt.
-      if (session.pendingCommand) this.scheduleCommand(session, 2500)
+      if (session.pendingCommand) this.scheduleCommand(session, session.remote ? 6000 : 2500)
 
       return { ok: true }
     } catch (err) {

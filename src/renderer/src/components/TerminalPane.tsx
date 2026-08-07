@@ -26,7 +26,9 @@ import { MOD } from '../lib/util'
  * being dragged over it is another pane rather than a file from the desktop.
  * Dropping a file on a pane already means something else.
  */
-const PANE_DRAG = 'application/x-eaon-pane'
+/** Shared with SurfacePaneChrome — a preview or diff pane trades places with
+ *  a terminal one through the exact same drag payload. */
+export const PANE_DRAG = 'application/x-eaon-pane'
 
 export function TerminalPane({
   workspace,
@@ -84,7 +86,12 @@ export function TerminalPane({
     terminals.spawn(
       pane.id,
       pane.cwd,
-      { command: pane.command, agentId: pane.agentId, sessionId: pane.sessionId },
+      {
+        command: pane.command,
+        agentId: pane.agentId,
+        sessionId: pane.sessionId,
+        host: workspace.host
+      },
       settings
     )
     return () => terminals.detach(pane.id)
@@ -113,7 +120,7 @@ export function TerminalPane({
     const read = (): void => {
       // Nothing here is worth doing behind another window.
       if (document.hidden) return
-      branchOf(pane.cwd).then((b) => {
+      branchOf(pane.cwd, workspace.host).then((b) => {
         if (live && b !== pane.branch) patchPane(pane.id, { branch: b })
       })
     }

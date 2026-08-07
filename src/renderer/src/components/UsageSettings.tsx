@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { BILLED_NOTE, TIER_LIMITS, formatTokens, limitsFor } from '@shared/usage'
 import { useStore } from '../store/useStore'
+import { CodexUsageCard } from './CodexUsageCard'
 
 function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -107,6 +108,8 @@ export function UsageSettings(): React.JSX.Element {
           </p>
         </>
       )}
+
+      <CodexUsageCard />
 
       <Row name="Forget what was scanned" desc="Reads every transcript again from the beginning. Only useful if the numbers look wrong.">
         <button

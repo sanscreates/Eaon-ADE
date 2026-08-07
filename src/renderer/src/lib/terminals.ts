@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { getTheme, type TerminalPalette } from '@shared/themes'
 import type { PaneStatus, Settings } from '@shared/types'
+import type { SshHost } from '@shared/ssh'
 import { IS_MAC, commandFor } from './keys'
 import { stripAnsi } from './util'
 
@@ -192,6 +193,8 @@ export interface Launch {
   command: string | null
   agentId: string
   sessionId: string | null
+  /** Set for a pane on a remote workspace — runs `ssh` instead of a local shell. */
+  host?: SshHost | null
 }
 
 export interface TerminalEvents {
@@ -764,7 +767,8 @@ class TerminalRegistry {
       // starting a conversation or reopening one. It is the side that can see
       // the transcripts, so it is the side that decides.
       agentId: launch.agentId,
-      sessionId: launch.sessionId
+      sessionId: launch.sessionId,
+      host: launch.host
     })
     if (!res.ok) {
       rt.spawned = false

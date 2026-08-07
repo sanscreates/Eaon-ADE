@@ -249,3 +249,58 @@
 .usage-more:hover {
   color: var(--text-hi);
 }
+
+/* ---- the Codex readout, beside the Claude one -------------------------- */
+
+.cu-codex {
+  margin-top: 26px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line-100);
+}
+
+.cu-windows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.cu-window-head,
+.cu-window-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cu-window-name {
+  color: var(--text-hi);
+  font-size: var(--fs-sm);
+}
+.cu-window-num {
+  color: var(--text-mid);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+}
+.cu-window-foot {
+  margin-top: 4px;
+  color: var(--text-lo);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+.cu-bar {
+  height: 5px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: var(--ink-300);
+  overflow: hidden;
+}
+/* scaleX rather than width: this animates on the compositor, not in layout. */
+.cu-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+  transform-origin: left center;
+  transition: transform var(--dur) var(--ease);
+}

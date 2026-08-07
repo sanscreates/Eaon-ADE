@@ -443,6 +443,13 @@
   min-height: 0;
   overflow: hidden;
 }
+
+/* The rich-preview body, filling the same space .editor-host would. */
+.fp-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
 .editor-host .cm-editor {
   height: 100%;
   font-family: var(--font-mono);

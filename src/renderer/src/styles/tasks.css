@@ -1,0 +1,271 @@
+/*
+ * Work waiting for you, in the side dock.
+ *
+ * The dock is narrow, so a row is two lines: what it is on top, and the
+ * details that let you tell two similar-looking tickets apart underneath.
+ * The tone stripe down the left is the only colour on a row — it carries
+ * open/draft/merged/closed at a glance without a badge for each.
+ */
+
+.wk-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.wk-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+/* ---- filters ------------------------------------------------------------ */
+
+.wk-filters {
+  display: flex;
+  gap: 3px;
+}
+
+.wk-filter {
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-lo);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+  transition:
+    color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+.wk-filter:hover {
+  color: var(--text-hi);
+}
+.wk-filter[data-on='true'] {
+  background: var(--ink-300);
+  color: var(--text-hi);
+}
+.wk-filter:focus-visible {
+  outline: none;
+  border-color: var(--accent-edge);
+}
+
+/* ---- rows --------------------------------------------------------------- */
+
+.wk-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 9px 8px 10px;
+  margin-bottom: 4px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-100);
+  border-left-width: 2px;
+  background: var(--ink-100);
+  transition: border-color var(--dur) var(--ease);
+}
+.wk-row:hover {
+  border-color: var(--line-300);
+}
+/* The one piece of colour on the row, and it means state. */
+.wk-row[data-tone='open'] {
+  border-left-color: var(--accent);
+}
+.wk-row[data-tone='draft'] {
+  border-left-color: var(--text-lo);
+}
+.wk-row[data-tone='merged'] {
+  border-left-color: var(--hue-violet);
+}
+.wk-row[data-tone='closed'] {
+  border-left-color: var(--danger);
+}
+
+.wk-icon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--text-lo);
+}
+
+.wk-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.wk-title-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wk-ref {
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-lo);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+.wk-ref:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.wk-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-hi);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wk-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: var(--fs-micro);
+  color: var(--text-lo);
+}
+
+.wk-state {
+  text-transform: lowercase;
+}
+.wk-state[data-tone='open'] {
+  color: var(--accent);
+}
+.wk-state[data-tone='merged'] {
+  color: var(--hue-violet);
+}
+.wk-state[data-tone='closed'] {
+  color: var(--danger);
+}
+
+.wk-review {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.wk-review[data-kind='approved'] {
+  color: var(--accent);
+}
+.wk-review[data-kind='changes'] {
+  color: var(--attention);
+}
+
+.wk-label {
+  padding: 0 5px;
+  border-radius: var(--r-sm);
+  background: var(--ink-300);
+  color: var(--text-mid);
+}
+
+/* ---- actions ------------------------------------------------------------ */
+
+.wk-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.wk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-200);
+  background: var(--ink-300);
+  color: var(--text-mid);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+.wk-btn:hover:not(:disabled) {
+  color: var(--text-hi);
+  border-color: var(--line-300);
+}
+.wk-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.wk-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.wk-btn-primary {
+  border-color: var(--accent-edge);
+  color: var(--accent);
+}
+.wk-btn:focus-visible {
+  outline: none;
+  border-color: var(--accent-edge);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+/* ---- notes -------------------------------------------------------------- */
+
+.wk-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 6px 2px;
+  color: var(--text-lo);
+  font-size: var(--fs-label);
+  line-height: 1.5;
+}
+.wk-note-warn {
+  color: var(--text-mid);
+}
+.wk-note-warn svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--attention);
+}
+
+/* ---- new Linear issue --------------------------------------------------- */
+
+.wk-new {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  margin-bottom: 8px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-200);
+  background: var(--ink-100);
+}
+
+.wk-select,
+.wk-input {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-200);
+  background: var(--ink-300);
+  color: var(--text-hi);
+  font-size: var(--fs-sm);
+}
+.wk-select:focus,
+.wk-input:focus {
+  outline: none;
+  border-color: var(--accent-edge);
+}
+.wk-textarea {
+  min-height: 54px;
+  resize: vertical;
+  font-family: inherit;
+}

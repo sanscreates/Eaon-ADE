@@ -161,12 +161,12 @@ export function Brain(): React.JSX.Element {
           data-on={registered}
           title={
             registered
-              ? 'Agents in this workspace can read and write these memories over MCP. Approve it once when Claude Code first starts.'
-              : 'Not registered with agents yet'
+              ? 'Agents started here can read and write these memories over MCP, and carry a skill telling them to search before exploring and record what they learn. Claude Code asks to approve the server once.'
+              : 'Not connected to agents yet — starting one in this folder wires it up'
           }
         >
           {registered ? <Check size={11} /> : <Plug size={11} />}
-          MCP
+          Agents
         </span>
 
         <button
@@ -263,7 +263,10 @@ export function Brain(): React.JSX.Element {
           ) : (
             <div className="empty" style={{ height: '100%' }}>
               <strong>Pick a memory, or open the graph.</strong>
-              <span>Everything here is markdown in .eaonbrain/ — commit it with your code.</span>
+              <span>
+                Everything here is markdown in .eaonbrain/ — commit it with your code. Agents read
+                and write it over MCP, guided by the skill in .claude/skills/eaon-brain/.
+              </span>
             </div>
           )}
         </section>

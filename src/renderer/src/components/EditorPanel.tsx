@@ -11,10 +11,22 @@ import { json } from '@codemirror/lang-json'
 import { markdown } from '@codemirror/lang-markdown'
 import { python } from '@codemirror/lang-python'
 import { rust } from '@codemirror/lang-rust'
-import { ChevronLeft, File, FileText, Folder, RefreshCw, Save, Search } from 'lucide-react'
+import {
+  ChevronLeft,
+  Code2,
+  Eye,
+  File,
+  FileText,
+  Folder,
+  RefreshCw,
+  Save,
+  Search,
+  SquareStack
+} from 'lucide-react'
 import type { DirEntry } from '@shared/types'
 import { useStore } from '../store/useStore'
 import { basename } from '../lib/util'
+import { FilePreviewBody, previewKindFor } from './FilePreviewBody'
 
 /** Reads through the same custom properties as the rest of the app, so the
  *  editor repaints with the theme without being rebuilt. */
@@ -155,8 +167,17 @@ function languageFor(file: string): Extension[] {
   return []
 }
 
-export function EditorPanel({ cwd }: { cwd: string }): React.JSX.Element {
+export function EditorPanel({
+  cwd,
+  workspaceId
+}: {
+  cwd: string
+  /** Present whenever this is mounted from a real workspace — lets the
+   *  currently open file be split out into its own grid pane. */
+  workspaceId?: string
+}): React.JSX.Element {
   const notify = useStore((s) => s.notify)
+  const addPane = useStore((s) => s.addPane)
 
   const [dir, setDir] = useState(cwd)
   const [entries, setEntries] = useState<DirEntry[]>([])
@@ -166,6 +187,15 @@ export function EditorPanel({ cwd }: { cwd: string }): React.JSX.Element {
   const [doc, setDoc] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
   const [autosave, setAutosave] = useState(false)
+  /**
+   * Markdown opens rendered by default — README is a document to read far
+   * more often than it is one to edit — with a toggle back to the raw,
+   * editable source. Images and PDFs have no source to toggle to at all;
+   * `previewLocked` says so, so the toggle button does not appear for them.
+   */
+  const [previewOn, setPreviewOn] = useState(false)
+  /** What preview mode actually renders — a snapshot taken at toggle time. */
+  const [liveMarkdown, setLiveMarkdown] = useState<string | undefined>(undefined)
 
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -210,12 +240,35 @@ export function EditorPanel({ cwd }: { cwd: string }): React.JSX.Element {
   }, [])
 
   const open = async (path: string): Promise<void> => {
+    const kind = previewKindFor(path)
+
+    // An image or a PDF has no text to read at all — asking fs.read for one
+    // is exactly the request that used to end in "Binary file — Eaon can't
+    // show this one." FilePreviewBody does its own fetch over the binary-safe
+    // door, so this just points it at the path and gets out of the way.
+    if (kind === 'image' || kind === 'pdf') {
+      fileRef.current = null
+      setDirty(false)
+      setDoc(null)
+      setFile(path)
+      setPreviewOn(true)
+      // No live editor exists for this file yet, so there is no in-progress
+      // buffer to prefer over disk — see the note on liveMarkdown below.
+      setLiveMarkdown(undefined)
+      return
+    }
+
     try {
       const { text, truncated } = await window.eaon.fs.read(path)
       fileRef.current = path
       setDirty(false)
       setFile(path)
       setDoc(text)
+      setPreviewOn(kind === 'markdown')
+      // A fresh file has nothing typed into it yet. Leaving the previous
+      // file's snapshot here would render file A's content mislabelled as
+      // file B the moment this one opens already in preview mode.
+      setLiveMarkdown(undefined)
       if (truncated) {
         notify({
           kind: 'info',
@@ -265,6 +318,19 @@ export function EditorPanel({ cwd }: { cwd: string }): React.JSX.Element {
       viewRef.current = null
     }
   }, [file, doc, save])
+
+  const kind = file ? previewKindFor(file) : 'unsupported'
+  const previewLocked = kind === 'image' || kind === 'pdf'
+
+  const togglePreview = (): void => {
+    if (!previewOn) {
+      // Snapshot what is actually in the buffer right now, edited or not —
+      // rendering the copy on disk would either lag behind what was just
+      // typed or, worse, quietly hide it the moment preview is turned on.
+      setLiveMarkdown(viewRef.current?.state.doc.toString() ?? doc ?? undefined)
+    }
+    setPreviewOn((v) => !v)
+  }
 
   const shown = hits ?? entries
   const atRoot = dir === cwd
@@ -362,8 +428,40 @@ export function EditorPanel({ cwd }: { cwd: string }): React.JSX.Element {
                 </span>
                 {dirty && <span className="chip">unsaved</span>}
                 {autosave && <span className="chip">autosave on</span>}
+                {!previewLocked && kind === 'markdown' && (
+                  <button className="icon-btn" data-on={previewOn} onClick={togglePreview} title={previewOn ? 'Show raw source' : 'Show rendered preview'} aria-label={previewOn ? 'Show raw source' : 'Show rendered preview'}>
+                    {previewOn ? <Code2 size={14} /> : <Eye size={14} />}
+                  </button>
+                )}
+                {workspaceId && kind !== 'unsupported' && (
+                  <button
+                    className="icon-btn"
+                    onClick={() =>
+                      addPane(workspaceId, { kind: 'preview', previewPath: file })
+                    }
+                    title="Open in its own pane, beside your terminals"
+                    aria-label="Open in its own pane"
+                  >
+                    <SquareStack size={14} />
+                  </button>
+                )}
               </div>
-              <div className="editor-host" ref={hostRef} />
+
+              {/*
+                The editor stays mounted underneath a shown preview rather
+                than being unmounted for one — CodeMirror does not persist its
+                buffer through a destroy/recreate cycle, so toggling preview
+                would otherwise discard whatever was typed and never saved.
+              */}
+              {(previewOn || previewLocked) && (
+                <div className="fp-scroll">
+                  <FilePreviewBody
+                    path={file}
+                    markdownOverride={kind === 'markdown' ? liveMarkdown : undefined}
+                  />
+                </div>
+              )}
+              <div className="editor-host" ref={hostRef} hidden={previewOn || previewLocked} />
             </>
           ) : (
             <div className="empty">

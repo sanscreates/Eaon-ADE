@@ -1,0 +1,249 @@
+/*
+ * Connected services in Settings.
+ *
+ * Same row grammar as the account switcher — mark, body, state on the right —
+ * so the two settings pages read as one app. The one addition is the strip of
+ * variable names, which is the only thing on the page that is genuinely
+ * diagnostic: it says which half of a two-part credential you are missing
+ * without ever saying what either half contains.
+ */
+
+.ig-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.ig-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 11px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-200);
+  background: var(--ink-100);
+  transition: border-color var(--dur) var(--ease);
+}
+.ig-card:hover {
+  border-color: var(--line-300);
+}
+/* Connected is a state worth seeing at a glance down the list, not a hover. */
+.ig-card[data-status='connected'] {
+  border-color: var(--accent-edge);
+}
+
+/*
+ * A real brand mark carries its own colour and needs a surface that reads
+ * the same regardless of theme or status — the fixed --brand-bone/-ink pair
+ * (never themed, see tokens.css) rather than the card's own dark/light ink
+ * scale, which would fight a fixed-colour logo half the time. The provider
+ * with no verified mark (Azure DevOps — no maintained brand-asset source
+ * was worth a second dependency for one icon) falls back to its initial on
+ * the same chip, so every row still reads as one family.
+ */
+.ig-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--line-200);
+  background: var(--brand-bone);
+  color: var(--brand-ink);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.ig-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.ig-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-hi);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.ig-account {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-wash);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+}
+
+.ig-blurb {
+  color: var(--text-mid);
+  font-size: var(--fs-sm);
+}
+
+.ig-detail {
+  color: var(--text-lo);
+  font-size: var(--fs-label);
+}
+
+/* ---- credential variables ------------------------------------------- */
+
+.ig-envs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.ig-env {
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-200);
+  background: var(--ink-300);
+  color: var(--text-lo);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  /* The name is the whole content; wrapping it mid-token helps nobody. */
+  white-space: nowrap;
+}
+.ig-env[data-set='true'] {
+  border-color: var(--accent-edge);
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+/*
+ * Unset names stay legible rather than being hidden: you need to read the one
+ * you have not exported yet. The strike says "absent" without dimming it to
+ * the point of being unreadable, which a 10px mono face cannot afford.
+ */
+.ig-env[data-set='false'] {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  opacity: 0.72;
+}
+
+/* ---- state on the right --------------------------------------------- */
+
+.ig-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  flex: 0 0 auto;
+}
+
+.ig-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line-200);
+  background: var(--ink-300);
+  color: var(--text-mid);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.ig-pill[data-status='connected'] {
+  border-color: transparent;
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+.ig-pill[data-status='needs-auth'] {
+  border-color: transparent;
+  background: rgba(245, 166, 91, 0.14);
+  color: var(--attention);
+}
+
+.ig-hint {
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  background: var(--ink-300);
+  color: var(--text-mid);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  user-select: all;
+}
+
+.ig-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-lo);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+  transition:
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+.ig-link:hover {
+  color: var(--text-hi);
+}
+.ig-link:active {
+  transform: scale(0.97);
+}
+.ig-link:focus-visible {
+  outline: none;
+  color: var(--text-hi);
+  text-decoration: underline;
+}
+
+/* ---- footer ---------------------------------------------------------- */
+
+.ig-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ig-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-200);
+  background: var(--ink-200);
+  color: var(--text-hi);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+.ig-refresh:hover:not(:disabled) {
+  border-color: var(--line-300);
+}
+.ig-refresh:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.ig-refresh:focus-visible {
+  outline: none;
+  border-color: var(--accent-edge);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+.ig-refresh:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.ig-foot-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-lo);
+  font-size: var(--fs-label);
+}

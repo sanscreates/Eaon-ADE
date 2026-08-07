@@ -8,6 +8,7 @@ import {
   Mic,
   Minus,
   Palette,
+  Plug,
   Plus,
   Terminal,
   UserRound,
@@ -23,6 +24,8 @@ import { VoicePanel } from './VoicePanel'
 import { SpeechPanel } from './SpeechPanel'
 import { UpdateSetting } from './UpdateSetting'
 import { AccountsPanel } from './AccountsPanel'
+import { CodexAccountsPanel } from './CodexAccountsPanel'
+import { IntegrationsPanel } from './IntegrationsPanel'
 import { UsageSettings } from './UsageSettings'
 
 type SectionId =
@@ -31,6 +34,7 @@ type SectionId =
   | 'browser'
   | 'agents'
   | 'accounts'
+  | 'integrations'
   | 'usage'
   | 'voice'
   | 'speech'
@@ -43,6 +47,7 @@ const SECTIONS: { id: SectionId; label: string; icon: typeof Palette }[] = [
   { id: 'browser', label: 'Browser', icon: Compass },
   { id: 'agents', label: 'Agents', icon: Bot },
   { id: 'accounts', label: 'Accounts', icon: UserRound },
+  { id: 'integrations', label: 'Integrations', icon: Plug },
   { id: 'usage', label: 'Plan usage', icon: Gauge },
   { id: 'voice', label: 'Voice', icon: Mic },
   { id: 'speech', label: 'Spoken alerts', icon: Volume2 },
@@ -549,7 +554,14 @@ export function SettingsModal(): React.JSX.Element | null {
 
             {section === 'speech' && <SpeechPanel />}
 
-            {section === 'accounts' && <AccountsPanel />}
+            {section === 'accounts' && (
+              <>
+                <AccountsPanel />
+                <CodexAccountsPanel />
+              </>
+            )}
+
+            {section === 'integrations' && <IntegrationsPanel />}
 
             {section === 'usage' && <UsageSettings />}
 

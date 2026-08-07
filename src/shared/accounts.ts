@@ -17,7 +17,24 @@
 /** The account that was already on this machine before any of this existed. */
 export const DEFAULT_ACCOUNT_ID = 'default'
 
+/**
+ * Which agent an account belongs to.
+ *
+ * Claude Code and Codex work the same way — a configuration directory, chosen
+ * by an environment variable — so they share this whole mechanism. What they
+ * do not share is where that directory lives, what the variable is called, or
+ * what is written inside it, which is all that `VendorSpec` in
+ * `src/main/accounts.ts` carries.
+ */
+export type AgentVendor = 'claude' | 'codex'
+
+export const VENDOR_LABEL: Record<AgentVendor, string> = {
+  claude: 'Claude',
+  codex: 'Codex'
+}
+
 export interface Account {
+  vendor: AgentVendor
   id: string
   /** Where Claude Code keeps this account. `~/.claude` for the original one. */
   configDir: string

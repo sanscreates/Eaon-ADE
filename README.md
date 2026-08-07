@@ -57,13 +57,23 @@ and the sixteen ANSI colours. Adding your own is about twenty lines.
 `.eaonbrain/` beside the code. Notes reference each other with `[[wiki links]]`,
 so the folder is a graph rather than a pile of files, and the app draws it.
 
-The point is the MCP server. Opening a workspace registers `eaon-brain` in that
-project's `.mcp.json`, so every agent you start there — Claude Code, Codex,
-anything speaking MCP — gets six tools for reading and writing the same memory:
-`brain_search`, `brain_list`, `brain_read`, `brain_write`, `brain_link`,
-`brain_related`. A fresh session searches the brain instead of re-reading the
-source tree to rebuild context it had yesterday. What one agent learns, the next
-one starts with. Commit it like code.
+The point is the MCP server. Starting an agent in a folder registers
+`eaon-brain` in that project's `.mcp.json`, so every agent you run there —
+Claude Code, Codex, anything speaking MCP — gets six tools for reading and
+writing the same memory: `brain_search`, `brain_list`, `brain_read`,
+`brain_write`, `brain_link`, `brain_related`. A fresh session searches the brain
+instead of re-reading the source tree to rebuild context it had yesterday. What
+one agent learns, the next one starts with. Commit it like code.
+
+Tools alone are not enough — an agent has to decide to use them, and by default
+it does not. So the same step installs a skill at
+`.claude/skills/eaon-brain/SKILL.md`: search the brain before exploring the
+source, record what was learned before finishing, and title, tag and link the
+note so it can be found again. It is ordinary markdown, committed with the repo,
+and meant to be edited — a copy you have changed is never overwritten. The
+difference is not subtle: given the same question, a session without it answers
+from the prompt and writes nothing down, while a session with it reads what past
+sessions worked out and leaves its own findings behind.
 
 Claude Code asks you to approve a project-scoped MCP server the first time it
 sees one; that is a one-off per workspace.

@@ -5,6 +5,8 @@
 
 import { DEFAULT_THEME_ID } from './themes'
 import { DEFAULT_SEARCH_ENGINE } from './browser'
+import type { Trial } from './worktrees'
+import type { SshHost } from './ssh'
 
 export type PaneStatus = 'live' | 'idle' | 'attention' | 'exited'
 
@@ -23,8 +25,19 @@ export interface AgentDef {
   available?: boolean
 }
 
+/**
+ * What a grid cell holds.
+ *
+ * Absent reads as `'terminal'`, matching every other "kind" in this file —
+ * so a workspace persisted before previews and diff panes existed opens
+ * exactly as it always did, no migration needed.
+ */
+export type PaneKind = 'terminal' | 'preview' | 'diff'
+
 export interface PaneSpec {
   id: string
+  /** Absent means 'terminal'. Use paneKind(pane) rather than reading this raw. */
+  kind?: PaneKind
   /** Stable short handle: "Tate", "Ava". Used for addressing in broadcasts. */
   name: string
   /** Title reported by the program via the OSC title escape, if any. */
@@ -55,6 +68,13 @@ export interface PaneSpec {
    */
   sessionId: string | null
   createdAt: number
+  /** kind: 'preview' only — the file this pane shows. Ignored otherwise. */
+  previewPath?: string | null
+}
+
+/** `pane.kind`, defaulted — the one place that should ever read the raw field. */
+export function paneKind(pane: PaneSpec): PaneKind {
+  return pane.kind ?? 'terminal'
 }
 
 /**
@@ -120,6 +140,22 @@ export interface Workspace {
    */
   folderId: string | null
   createdAt: number
+  /**
+   * The remote box every pane in this workspace runs on, or null/absent for a
+   * normal local workspace. A workspace either has a host or it doesn't —
+   * panes are not mixed local/remote within one, which is what lets every
+   * other panel (terminals, git, worktrees) stay ignorant of the distinction
+   * and just call the same store actions.
+   *
+   * Embedded rather than looked up by id: there is no separate host registry
+   * to keep in sync. A config-sourced host connects by alias, so editing
+   * `~/.ssh/config` takes effect on the next connection regardless of what
+   * was parsed out of it when the workspace was created; a manually-entered
+   * host's fields are fixed for that workspace's lifetime — changing them
+   * means creating a new remote workspace, which is a real v1 limitation
+   * rather than a half-built settings-sync path.
+   */
+  host?: SshHost | null
 }
 
 export interface Preset {
@@ -242,6 +278,11 @@ export interface PersistedState {
   board: BoardCard[]
   vault: VaultNote[]
   dismissedResume: string[]
+  /**
+   * Running and finished trials. Absent on anything saved before isolated
+   * worktrees existed, which reads the same as none.
+   */
+  trials?: Trial[]
 }
 
 export interface ResumableSession {
@@ -277,6 +318,7 @@ export interface GitStatus {
 
 export interface SpawnRequest {
   paneId: string
+  /** Local path, or the remote path when `host` is set. */
   cwd: string
   cols: number
   rows: number
@@ -287,6 +329,12 @@ export interface SpawnRequest {
   agentId?: string
   /** Conversation to pin or reopen. The main process decides which. */
   sessionId?: string | null
+  /**
+   * Set when this pane belongs to a workspace connected to a remote box. The
+   * pane runs the real `ssh` binary instead of a local shell (src/main/ssh.ts)
+   * — that binary is the only thing that ever touches a key or a passphrase.
+   */
+  host?: SshHost | null
 }
 
 /**

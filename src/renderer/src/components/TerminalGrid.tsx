@@ -1,9 +1,12 @@
 import { useEffect } from 'react'
 import { Plus } from 'lucide-react'
-import { gridColumns, type Workspace } from '@shared/types'
+import { gridColumns, paneKind, type Workspace } from '@shared/types'
 import { pendingPrompts, useStore } from '../store/useStore'
+import { TrialBar } from './TrialBar'
 import { terminals } from '../lib/terminals'
 import { TerminalPane } from './TerminalPane'
+import { PreviewGridPane } from './PreviewGridPane'
+import { DiffGridPane } from './DiffGridPane'
 import { PaneGrid } from './PaneGrid'
 import { Conductor } from './Conductor'
 import { Notices } from './Notices'
@@ -61,23 +64,36 @@ export function TerminalGrid({ workspace }: { workspace: Workspace }): React.JSX
   }
 
   return (
-    <div className="grid-stage" data-conductor={conductorOpen}>
-      {zoomed ? (
-        <div className="grid" data-zoomed="true">
-          {visible.map((pane) => (
-            <TerminalPane
-              key={pane.id}
-              workspace={workspace}
-              pane={pane}
-              index={workspace.panes.findIndex((p) => p.id === pane.id)}
-            />
-          ))}
-        </div>
-      ) : (
-        <PaneGrid workspace={workspace} cols={cols} />
-      )}
-      <Notices />
-      <Conductor workspace={workspace} />
+    /*
+     * Wrapped rather than nested: the grid inside is `height: 100%`, so a bar
+     * placed alongside it would push it straight into overflow. The wrapper is
+     * the flex column that lets the bar take its own height and the grid have
+     * the rest. TrialBar renders nothing at all when this is not a trial.
+     */
+    <div className="grid-wrap">
+      <TrialBar workspaceId={workspace.id} />
+      <div className="grid-stage" data-conductor={conductorOpen}>
+        {zoomed ? (
+          <div className="grid" data-zoomed="true">
+            {visible.map((pane) => {
+              const props = {
+                key: pane.id,
+                workspace,
+                pane,
+                index: workspace.panes.findIndex((p) => p.id === pane.id)
+              }
+              const kind = paneKind(pane)
+              if (kind === 'preview') return <PreviewGridPane {...props} />
+              if (kind === 'diff') return <DiffGridPane {...props} />
+              return <TerminalPane {...props} />
+            })}
+          </div>
+        ) : (
+          <PaneGrid workspace={workspace} cols={cols} />
+        )}
+        <Notices />
+        <Conductor workspace={workspace} />
+      </div>
     </div>
   )
 }

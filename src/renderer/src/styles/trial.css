@@ -1,0 +1,290 @@
+/*
+ * The trial strip above a set of isolated panes.
+ *
+ * It has to sit above the grid without stealing much from it — the agents are
+ * the thing you are watching. One line per attempt, the numbers that let you
+ * tell them apart, and the diff only when asked for.
+ */
+
+.trialbar {
+  flex: 0 0 auto;
+  padding: 9px 12px 10px;
+  border-bottom: 1px solid var(--line-200);
+  background: var(--ink-100);
+}
+
+.tr-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 8px;
+}
+
+.tr-prompt {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-hi);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tr-base {
+  flex: 0 0 auto;
+  color: var(--text-lo);
+  font-size: var(--fs-micro);
+}
+
+.tr-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.tr-confirm {
+  color: var(--text-mid);
+  font-size: var(--fs-label);
+}
+
+/* ---- rows -------------------------------------------------------------- */
+
+.tr-members {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tr-member {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  background: var(--ink-200);
+  transition: border-color var(--dur) var(--ease);
+}
+.tr-member:hover {
+  border-color: var(--line-300);
+}
+.tr-member[data-won='true'] {
+  border-color: var(--accent-edge);
+  background: var(--accent-wash);
+}
+
+.tr-label {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid var(--line-200);
+  background: var(--ink-300);
+  color: var(--text-hi);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform var(--dur) var(--ease);
+}
+.tr-label:hover {
+  border-color: var(--accent-edge);
+}
+.tr-label:active {
+  transform: scale(0.94);
+}
+.tr-member[data-won='true'] .tr-label {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--on-accent);
+}
+
+.tr-body {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tr-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--fs-label);
+}
+.tr-stat-idle {
+  color: var(--text-lo);
+  font-size: var(--fs-label);
+}
+.tr-files {
+  color: var(--text-hi);
+}
+/* Tabular figures: these numbers change every few seconds and must not jitter. */
+.tr-add,
+.tr-del {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  font-variant-numeric: tabular-nums;
+}
+.tr-add {
+  color: var(--accent);
+}
+.tr-del {
+  color: var(--danger);
+}
+
+.tr-branch {
+  color: var(--text-lo);
+  font-size: var(--fs-micro);
+}
+
+/* ---- actions ----------------------------------------------------------- */
+
+.tr-link,
+.tr-merge,
+.tr-danger,
+.tr-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-200);
+  background: var(--ink-300);
+  color: var(--text-mid);
+  font-size: var(--fs-micro);
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+.tr-link,
+.tr-merge,
+.tr-danger {
+  padding: 3px 8px;
+}
+.tr-icon {
+  padding: 3px;
+}
+
+.tr-link:hover,
+.tr-merge:hover:not(:disabled),
+.tr-icon:hover {
+  color: var(--text-hi);
+  border-color: var(--line-300);
+}
+.tr-link:active,
+.tr-merge:active:not(:disabled),
+.tr-icon:active,
+.tr-danger:active {
+  transform: scale(0.97);
+}
+.tr-merge:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.tr-danger {
+  border-color: transparent;
+  background: var(--danger);
+  color: var(--brand-bone);
+}
+
+.tr-merged {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  color: var(--accent);
+  font-size: var(--fs-micro);
+  font-weight: 500;
+}
+
+.tr-link:focus-visible,
+.tr-merge:focus-visible,
+.tr-icon:focus-visible,
+.tr-danger:focus-visible,
+.tr-label:focus-visible {
+  outline: none;
+  border-color: var(--accent-edge);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+/* ---- diff -------------------------------------------------------------- */
+
+.tr-diff {
+  max-height: 240px;
+  margin-top: 8px;
+  padding: 9px 10px;
+  overflow: auto;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-200);
+  background: var(--ink-300);
+  color: var(--text-mid);
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.tr-won,
+.tr-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 8px;
+  color: var(--text-lo);
+  font-size: var(--fs-label);
+}
+.tr-won {
+  color: var(--accent);
+}
+.tr-note {
+  margin: 8px 0 0;
+}
+
+/* ---- the isolation toggle in the setup wizard -------------------------- */
+
+.iso-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-200);
+  background: var(--ink-100);
+  cursor: pointer;
+  transition:
+    border-color var(--dur) var(--ease),
+    background var(--dur) var(--ease);
+}
+.iso-toggle:hover {
+  border-color: var(--line-300);
+}
+.iso-toggle[data-on='true'] {
+  border-color: var(--accent-edge);
+  background: var(--accent-wash);
+}
+.iso-toggle input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+.iso-toggle:focus-within {
+  border-color: var(--accent-edge);
+  box-shadow: 0 0 0 3px var(--accent-wash);
+}
+
+.iso-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.iso-name {
+  color: var(--text-hi);
+  font-size: var(--fs-sm);
+}
+.iso-note {
+  color: var(--text-mid);
+  font-size: var(--fs-label);
+  line-height: 1.5;
+}

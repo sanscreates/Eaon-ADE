@@ -7,23 +7,29 @@ import { PtyManager } from './pty-manager'
 import { Store } from './store'
 import * as fsapi from './fsapi'
 import * as git from './git'
-import { launchCommand, listResumable, sessionCountFor } from './sessions'
+import { launchCommand, listResumable, sessionCountFor, setCodexHome } from './sessions'
 import { PaneSessions } from './pane-sessions'
-import { Accounts } from './accounts'
+import { Accounts, CODEX_SPEC } from './accounts'
 import { AccountLogin } from './account-login'
 import { SessionWatch } from './session-watch'
 import { collectStats } from './stats'
 import { anthropicUsage, localUsage, resetUsageCache, setUsagePaths } from './usage'
+import { codexUsage, setCodexUsageHome } from './codex-usage'
 import * as browser from './browser'
 import * as models from './stt/models'
 import * as speech from './speech'
 import { SttHost } from './stt/host'
 import { Updater } from './updater'
+import { detectProviders, loadCredentials, refreshProviders, sessionEnv } from './integrations'
+import * as worktrees from './worktrees'
+import * as sshConfig from './ssh'
+import * as tasks from './tasks'
 import { BrainStore } from './brain/store'
-import { isRegistered, registerWorkspace } from './brain/register'
+import { isProvisioned, provisionWorkspace } from './brain/register'
 import { getTheme } from '../shared/themes'
 import { STT_MODELS } from '../shared/stt'
 import { AGENTS, type PersistedState, type SpawnRequest } from '../shared/types'
+import type { SshHost } from '../shared/ssh'
 
 const run = promisify(execFile)
 
@@ -34,6 +40,8 @@ let paneSessions: PaneSessions
 let sessionWatch: SessionWatch
 /** Signed-in Claude accounts, and which one new shells are given. */
 let accounts: Accounts
+/** Codex accounts, same mechanism, separate books. */
+let codexAccounts: Accounts
 /** At most one sign-in at a time; a second would race for the same directory. */
 let login: { id: string; flow: AccountLogin } | null = null
 const ptys = new PtyManager()
@@ -286,15 +294,27 @@ async function which(bin: string): Promise<string | null> {
 
 function registerIpc(): void {
   // ---- terminals -------------------------------------------------------
-  ipcMain.handle('pty:spawn', (_e, req: SpawnRequest) =>
+  ipcMain.handle('pty:spawn', (_e, req: SpawnRequest) => {
+    // Wire the memory into this folder before the shell exists, not when the
+    // Brain panel happens to be opened. An agent reads `.mcp.json` and
+    // `.claude/skills/` once at startup, so anything written afterwards is
+    // invisible until it is restarted — and "the brain is there, but only if
+    // you visited the right tab first" is not a thing anyone can rely on.
+    //
+    // Skipped for a remote pane: req.cwd is a path on the far end, not on
+    // this machine, and treating it as local here would write — or worse,
+    // overwrite something at a coincidentally-matching path — on the wrong
+    // computer. Provisioning a remote box's own Brain access is real future
+    // work, not something this silently half-does today.
+    if (!req.host) provisionWorkspace(req.cwd)
     // The session flags are decided here, where the transcripts are, rather
     // than in the renderer where they would only be a guess — and where what
     // the pane was last seen running is known, which the renderer never learns.
-    ptys.spawn({
+    return ptys.spawn({
       ...req,
       command: launchCommand({ ...req, observed: paneSessions?.get(req.paneId) })
     })
-  )
+  })
   ipcMain.on('pty:write', (_e, paneId: string, data: string) => ptys.write(paneId, data))
   ipcMain.on('pty:resize', (_e, paneId: string, cols: number, rows: number) =>
     ptys.resize(paneId, cols, rows)
@@ -318,6 +338,21 @@ function registerIpc(): void {
     resetUsageCache()
     return next
   })
+
+  // ---- Codex accounts --------------------------------------------------
+  // The same three doors, against the other vendor's books. Signing in is not
+  // among them: Codex's own `codex login` writes into whatever CODEX_HOME
+  // points at, so a pane opened on a reserved directory is the sign-in — there
+  // is no browser flow for this app to drive the way there is for Claude.
+  ipcMain.handle('codexAccounts:list', () => codexAccounts.list())
+  ipcMain.handle('codexAccounts:setActive', (_e, id: string) => codexAccounts.setActive(id))
+  ipcMain.handle('codexAccounts:remove', (_e, id: string) => codexAccounts.remove(id))
+  /**
+   * Makes an empty Codex home and hands back where it is, so the caller can
+   * open a pane in it and run `codex login` there.
+   */
+  ipcMain.handle('codexAccounts:reserve', () => codexAccounts.reserve())
+  ipcMain.handle('codexAccounts:commit', (_e, id: string) => codexAccounts.commit(id))
 
   /**
    * Starts a sign-in against a directory of its own.
@@ -376,6 +411,8 @@ function registerIpc(): void {
   // ---- filesystem ------------------------------------------------------
   ipcMain.handle('fs:list', (_e, dir: string) => fsapi.listDir(dir))
   ipcMain.handle('fs:read', (_e, file: string) => fsapi.readFile(file))
+  ipcMain.handle('fs:readBinary', (_e, file: string) => fsapi.readBinary(file))
+  ipcMain.handle('fs:mime', (_e, file: string) => fsapi.mimeFor(file))
   ipcMain.handle('fs:write', (_e, file: string, text: string) => fsapi.writeFile(file, text))
   ipcMain.handle('fs:search', (_e, root: string, q: string) => fsapi.searchFiles(root, q))
   ipcMain.handle('fs:isDir', (_e, target: string) => fsapi.isDirectory(target))
@@ -393,17 +430,56 @@ function registerIpc(): void {
     return res.canceled ? null : res.filePaths[0]
   })
 
-  // ---- git -------------------------------------------------------------
-  ipcMain.handle('git:status', (_e, cwd: string) => git.status(cwd))
-  ipcMain.handle('git:branch', (_e, cwd: string) => git.branchOf(cwd))
-  ipcMain.handle('git:diff', (_e, cwd: string, file: string, staged: boolean) =>
-    git.diff(cwd, file, staged)
+  // ---- git ---------------------------------------------------------------
+  // Every handler takes an optional trailing host: present, it runs over ssh
+  // against a remote workspace; absent, this is the exact local call it
+  // always was.
+  ipcMain.handle('git:status', (_e, cwd: string, host?: SshHost | null) =>
+    git.status(cwd, host)
   )
-  ipcMain.handle('git:stage', (_e, cwd: string, file: string) => git.stage(cwd, file))
-  ipcMain.handle('git:unstage', (_e, cwd: string, file: string) => git.unstage(cwd, file))
-  ipcMain.handle('git:stageAll', (_e, cwd: string) => git.stageAll(cwd))
-  ipcMain.handle('git:commit', (_e, cwd: string, msg: string) => git.commit(cwd, msg))
-  ipcMain.handle('git:log', (_e, cwd: string) => git.log(cwd))
+  ipcMain.handle('git:branch', (_e, cwd: string, host?: SshHost | null) =>
+    git.branchOf(cwd, host)
+  )
+  ipcMain.handle(
+    'git:diff',
+    (_e, cwd: string, file: string, staged: boolean, host?: SshHost | null) =>
+      git.diff(cwd, file, staged, host)
+  )
+  ipcMain.handle('git:stage', (_e, cwd: string, file: string, host?: SshHost | null) =>
+    git.stage(cwd, file, host)
+  )
+  ipcMain.handle('git:unstage', (_e, cwd: string, file: string, host?: SshHost | null) =>
+    git.unstage(cwd, file, host)
+  )
+  ipcMain.handle('git:stageAll', (_e, cwd: string, host?: SshHost | null) =>
+    git.stageAll(cwd, host)
+  )
+  ipcMain.handle('git:commit', (_e, cwd: string, msg: string, host?: SshHost | null) =>
+    git.commit(cwd, msg, host)
+  )
+  ipcMain.handle('git:log', (_e, cwd: string, host?: SshHost | null) => git.log(cwd, 20, host))
+
+  // ---- work items ----------------------------------------------------------
+  // Pull requests, issues and Linear tickets. The Linear API key is used to
+  // set a header inside `tasks.ts` and is never part of anything these
+  // handlers return — `scripts/check-tasks.mjs` greps the replies for a
+  // canary value rather than trusting that to stay true by itself.
+  ipcMain.handle('tasks:list', (_e, cwd: string) => tasks.allItems(cwd))
+  ipcMain.handle('tasks:approvePr', (_e, cwd: string, number: number, body?: string) =>
+    tasks.approvePr(cwd, number, body)
+  )
+  ipcMain.handle('tasks:linearTeams', () => tasks.linearTeams())
+  ipcMain.handle(
+    'tasks:createLinearIssue',
+    (_e, input: { teamId: string; title: string; description?: string }) =>
+      tasks.createLinearIssue(input)
+  )
+
+  // ---- ssh -----------------------------------------------------------------
+  // Read-only: the picker's data source. Nothing here is a saved credential —
+  // a chosen host is embedded directly in the workspace that uses it (see
+  // Workspace.host), so there is no separate registry to keep in sync here.
+  ipcMain.handle('ssh:listConfigHosts', () => sshConfig.parseSshConfig())
 
   // ---- agents & sessions ----------------------------------------------
   ipcMain.handle('agents:detect', async () => {
@@ -415,6 +491,70 @@ function registerIpc(): void {
     )
     return results
   })
+  ipcMain.handle('agents:detectRemote', async (_e, host: SshHost) => {
+    const results = await Promise.all(
+      AGENTS.map(async (a) => ({
+        ...a,
+        available: a.bin ? await sshConfig.remoteWhich(host, a.bin) : true
+      }))
+    )
+    return results
+  })
+  // ---- integrations ----------------------------------------------------
+  // Both doors answer in provider names, statuses and variable names. A token
+  // value has no route to the renderer, by construction rather than by care.
+  ipcMain.handle('integrations:list', () => detectProviders(which))
+  ipcMain.handle('integrations:refresh', () => refreshProviders(which))
+
+  // ---- worktrees -------------------------------------------------------
+  // Isolated checkouts, one per task, local or on a remote box. Everything is
+  // addressed by absolute path, and the base commit travels with the request
+  // so a branch moving underneath a running trial cannot change what each
+  // agent appears to have changed. Each handler's trailing host follows the
+  // same rule as git's: present, this runs over ssh; absent, it is exactly
+  // the local call it always was.
+  ipcMain.handle('worktrees:root', (_e, cwd: string, host?: SshHost | null) =>
+    worktrees.repoRoot(cwd, host)
+  )
+  ipcMain.handle('worktrees:list', (_e, cwd: string, host?: SshHost | null) =>
+    worktrees.list(cwd, host)
+  )
+  ipcMain.handle(
+    'worktrees:create',
+    (_e, req: worktrees.CreateRequest, host?: SshHost | null) => worktrees.create(req, host)
+  )
+  ipcMain.handle(
+    'worktrees:change',
+    (_e, dir: string, baseSha: string, host?: SshHost | null) =>
+      worktrees.change(dir, baseSha, host)
+  )
+  ipcMain.handle(
+    'worktrees:diff',
+    (_e, dir: string, baseSha: string, host?: SshHost | null) => worktrees.diff(dir, baseSha, host)
+  )
+  ipcMain.handle(
+    'worktrees:commitAll',
+    (_e, dir: string, message: string, host?: SshHost | null) =>
+      worktrees.commitAll(dir, message, host)
+  )
+  ipcMain.handle(
+    'worktrees:merge',
+    (_e, cwd: string, branch: string, host?: SshHost | null) => worktrees.merge(cwd, branch, host)
+  )
+  ipcMain.handle(
+    'worktrees:remove',
+    (
+      _e,
+      cwd: string,
+      dir: string,
+      opts: { force?: boolean; deleteBranch?: boolean },
+      host?: SshHost | null
+    ) => worktrees.remove(cwd, dir, opts, host)
+  )
+  ipcMain.handle('worktrees:prune', (_e, cwd: string, host?: SshHost | null) =>
+    worktrees.prune(cwd, host)
+  )
+
   ipcMain.handle('sessions:resumable', () => listResumable())
   ipcMain.handle('sessions:countFor', (_e, cwd: string) => sessionCountFor(cwd))
 
@@ -433,6 +573,19 @@ function registerIpc(): void {
     }
   )
   ipcMain.on('usage:forget', () => resetUsageCache())
+  /**
+   * The same readout for Codex, measured from its own rollouts.
+   *
+   * Separate from `usage:read` rather than a flag on it: the two read
+   * different files in different formats, and only one of them has an
+   * "ask the vendor directly" mode.
+   */
+  ipcMain.handle('usage:codex', (_e, opts: { session?: number; week?: number }) =>
+    codexUsage({
+      ...(opts?.session ? { session: opts.session } : {}),
+      ...(opts?.week ? { week: opts.week } : {})
+    })
+  )
 
   // ---- preview browser -------------------------------------------------
   ipcMain.handle('browser:devPorts', () => browser.devPorts())
@@ -505,10 +658,11 @@ function registerIpc(): void {
   // ---- project memory --------------------------------------------------
   ipcMain.handle('brain:open', (_e, cwd: string | null) => {
     brain.setWorkspace(cwd)
-    // Registering here means any agent started in this workspace from now on
-    // finds the memory tools already wired up.
-    const registration = cwd ? registerWorkspace(cwd) : null
-    return { stats: brain.stats(), registered: cwd ? isRegistered(cwd) : false, registration }
+    // Spawning a pane provisions the workspace too; doing it here as well
+    // covers the case where the panel is opened before any agent has run, so
+    // the badge tells the truth rather than "not connected yet, ask again".
+    const registration = cwd ? provisionWorkspace(cwd) : null
+    return { stats: brain.stats(), registered: cwd ? isProvisioned(cwd) : false, registration }
   })
   ipcMain.handle('brain:list', () => brain.list())
   ipcMain.handle('brain:get', (_e, slug: string) => brain.get(slug))
@@ -567,9 +721,22 @@ app.whenReady().then(() => {
 
   store = new Store()
   accounts = new Accounts()
+  codexAccounts = new Accounts(undefined, CODEX_SPEC)
   // Every shell, the usage readout and the resume list all follow the account
   // that is active, so none of them can show another account's work.
   ptys.setConfigDir(() => accounts.activeConfigDir())
+  ptys.setCodexHome(() => codexAccounts.activeConfigDir())
+  // The resume list has to follow the switch too, not keep offering the
+  // previous account's sessions.
+  setCodexHome(() => codexAccounts.activeConfigDir())
+  setCodexUsageHome(() => codexAccounts.activeConfigDir())
+  // Service tokens, read from the login shell once so a pane opened from the
+  // Dock can push exactly as one opened from a terminal can.
+  ptys.setExtraEnv(() => sessionEnv())
+  void loadCredentials()
+  // Worktrees live under our own data folder rather than beside the repository,
+  // so a trial never shows up as untracked noise in the repo it was cut from.
+  worktrees.setBaseDir(path.join(app.getPath('userData'), 'worktrees'))
   setUsagePaths({
     projects: () => accounts.activeProjectsDir(),
     credentials: () => accounts.activeCredentialsFile()
