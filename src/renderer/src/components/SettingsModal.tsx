@@ -10,6 +10,7 @@ import {
   Palette,
   Plug,
   Plus,
+  Server,
   Terminal,
   UserRound,
   Volume2,
@@ -24,6 +25,7 @@ import { VoicePanel } from './VoicePanel'
 import { SpeechPanel } from './SpeechPanel'
 import { UpdateSetting } from './UpdateSetting'
 import { AccountsPanel } from './AccountsPanel'
+import { HostsPanel } from './HostsPanel'
 import { CodexAccountsPanel } from './CodexAccountsPanel'
 import { IntegrationsPanel } from './IntegrationsPanel'
 import { UsageSettings } from './UsageSettings'
@@ -35,6 +37,7 @@ type SectionId =
   | 'agents'
   | 'accounts'
   | 'integrations'
+  | 'hosts'
   | 'usage'
   | 'voice'
   | 'speech'
@@ -48,6 +51,7 @@ const SECTIONS: { id: SectionId; label: string; icon: typeof Palette }[] = [
   { id: 'agents', label: 'Agents', icon: Bot },
   { id: 'accounts', label: 'Accounts', icon: UserRound },
   { id: 'integrations', label: 'Integrations', icon: Plug },
+  { id: 'hosts', label: 'Remote hosts', icon: Server },
   { id: 'usage', label: 'Plan usage', icon: Gauge },
   { id: 'voice', label: 'Voice', icon: Mic },
   { id: 'speech', label: 'Spoken alerts', icon: Volume2 },
@@ -562,6 +566,8 @@ export function SettingsModal(): React.JSX.Element | null {
             )}
 
             {section === 'integrations' && <IntegrationsPanel />}
+
+            {section === 'hosts' && <HostsPanel />}
 
             {section === 'usage' && <UsageSettings />}
 

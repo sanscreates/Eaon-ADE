@@ -248,6 +248,17 @@ export interface Settings {
   usageSessionLimit: number
   /** Billed tokens the 7-day window is measured against. 0 uses the plan default. */
   usageWeekLimit: number
+
+  // ---- remote targets ----------------------------------------------------
+  /**
+   * Hosts typed in by hand, kept so they are offered again.
+   *
+   * Entries in `~/.ssh/config` are not copied here — that file is the user's
+   * own and is read fresh every time, so a change made there shows up without
+   * anything needing to be re-saved. This is only for boxes that are not in
+   * it. Connection details, never a credential: see the note on SshHost.
+   */
+  sshHosts: SshHost[]
 }
 
 export interface BoardCard {
@@ -468,5 +479,8 @@ export const DEFAULT_SETTINGS: Settings = {
 
   usageFromAnthropic: false,
   usageSessionLimit: 0,
-  usageWeekLimit: 0
+  usageWeekLimit: 0,
+
+  // Nothing until a box is typed in; ~/.ssh/config is read fresh, not copied.
+  sshHosts: []
 }

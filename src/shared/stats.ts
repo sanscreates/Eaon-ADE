@@ -27,6 +27,109 @@ export interface LanguageStat {
   files: number
 }
 
+/** One day's token activity, for the intensity strip. */
+export interface TokenDay {
+  date: string
+  input: number
+  output: number
+  cacheWrite: number
+  cacheRead: number
+  total: number
+}
+
+export interface ModelTokens {
+  model: string
+  label: string
+  input: number
+  output: number
+  cacheWrite: number
+  cacheRead: number
+  total: number
+  requests: number
+  /** List-price estimate in USD. See PRICES. */
+  cost: number
+}
+
+export interface TokenStats {
+  total: number
+  input: number
+  output: number
+  cacheWrite: number
+  cacheRead: number
+  requests: number
+  /** List-price estimate in USD across every model. See PRICES. */
+  cost: number
+  /** Days with any agent activity at all, over everything on disk. */
+  activeDays: number
+  /** Share of everything sent in that came from the cache, 0-100. */
+  cacheShare: number
+  /** Per day over the window on screen, oldest first. */
+  days: TokenDay[]
+  best: TokenDay | null
+  models: ModelTokens[]
+}
+
+export const EMPTY_TOKEN_STATS: TokenStats = {
+  total: 0,
+  input: 0,
+  output: 0,
+  cacheWrite: 0,
+  cacheRead: 0,
+  requests: 0,
+  cost: 0,
+  activeDays: 0,
+  cacheShare: 0,
+  days: [],
+  best: null,
+  models: []
+}
+
+/**
+ * What a million tokens costs, per model family, in US dollars.
+ *
+ * Published API list prices, which is the only rate anyone can quote: a
+ * subscription does not bill per token at all, so for anyone on Pro or Max
+ * this is not a bill and never will be. It answers a different question —
+ * what this work would have cost through the API — and the surface says so
+ * rather than printing a dollar sign and leaving you to assume.
+ *
+ * Rates move. When they do, this table is the only thing to change.
+ */
+export const PRICES: Record<string, { input: number; output: number; write: number; read: number }> = {
+  opus: { input: 15, output: 75, write: 18.75, read: 1.5 },
+  sonnet: { input: 3, output: 15, write: 3.75, read: 0.3 },
+  haiku: { input: 0.8, output: 4, write: 1, read: 0.08 }
+}
+
+/** Anything unrecognised is priced as Sonnet, the middle of the range. */
+function priceFor(model: string): (typeof PRICES)[string] {
+  const m = model.toLowerCase()
+  for (const family of Object.keys(PRICES)) {
+    if (m.includes(family)) return PRICES[family]
+  }
+  return PRICES.sonnet
+}
+
+export function costOf(
+  model: string,
+  t: { input: number; output: number; cacheWrite: number; cacheRead: number }
+): number {
+  const p = priceFor(model)
+  return (
+    (t.input * p.input + t.output * p.output + t.cacheWrite * p.write + t.cacheRead * p.read) / 1e6
+  )
+}
+
+/** "claude-opus-4-5-20251101" reads as "Opus 4.5" beside five others. */
+export function tokenModelLabel(model: string): string {
+  if (!model) return 'Unknown'
+  const bare = model.replace(/^claude[-_]/, '').replace(/-\d{8}$/, '')
+  const [family, ...rest] = bare.split('-')
+  const name = family.charAt(0).toUpperCase() + family.slice(1)
+  const version = rest.join('.').replace(/\.$/, '')
+  return version ? `${name} ${version}` : name
+}
+
 export interface Stats {
   days: StatsDay[]
   /** Consecutive active days ending today or yesterday. */
@@ -50,6 +153,8 @@ export interface Stats {
   /** How far back the window reaches, YYYY-MM-DD. */
   from: string
   to: string
+  /** What the agents spent, read from the transcripts themselves. */
+  tokens: TokenStats
 }
 
 export const EMPTY_STATS: Stats = {
@@ -68,7 +173,8 @@ export const EMPTY_STATS: Stats = {
   hasRepo: false,
   folder: '',
   from: '',
-  to: ''
+  to: '',
+  tokens: EMPTY_TOKEN_STATS
 }
 
 /** Weeks shown in the contribution grid, matching the usual year-at-a-glance. */

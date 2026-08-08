@@ -458,3 +458,159 @@
 .stats-none {
   margin: 0;
 }
+
+/* ---- usage overview ------------------------------------------------------
+   The token figures, above the year grid. Built from the pieces already here —
+   the same tiles, the same heatmap cell — so it reads as part of the page
+   rather than a panel that wandered in from somewhere else. */
+
+.usage-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.usage-split {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 10px;
+  /* Each card only as tall as what is in it. Stretching the shorter one to
+     match left a third of a card empty under six weeks of squares. */
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .usage-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.usage-lede {
+  margin: 2px 0 12px;
+}
+
+.usage-best {
+  margin-left: auto;
+}
+
+/*
+ * Six weeks, one square a day, left to right.
+ *
+ * Not the calendar shape the year grid below uses — that one is arranged in
+ * week columns because a year only makes sense read that way. Six weeks is
+ * short enough to read as a plain run of days, and a run says "recently, and
+ * how hard" at a glance.
+ *
+ * The squares stretch to fill rather than sitting at their fixed 10px: the
+ * shared cell is sized for a grid 53 columns wide, and six weeks of it left
+ * most of the card empty. Auto-fit wraps them if the card is ever too narrow
+ * to take the lot on one line.
+ */
+.usage-strip {
+  display: grid;
+  /* Three weeks a row, so six weeks come out as two even rows rather than one
+     long line and a stub of whatever did not fit. */
+  grid-template-columns: repeat(21, minmax(0, 1fr));
+  gap: 4px;
+}
+.usage-strip .heatmap-cell {
+  width: auto;
+  height: auto;
+  aspect-ratio: 1;
+  border-radius: 3px;
+}
+/* A day with nothing in it still has to read as a day, or the run looks like
+   it has holes cut in it rather than quiet patches. */
+.usage-strip .heatmap-cell[data-level='0'] {
+  background: var(--ink-300);
+}
+
+.usage-scale {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--text-dim);
+  font-size: var(--fs-micro);
+}
+.usage-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0 auto;
+}
+
+/* ---- the mix ---- */
+
+.usage-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--ink-300);
+}
+.usage-bar > span {
+  min-width: 2px;
+  transition: width var(--dur) var(--ease);
+}
+
+/* Three shades of one hue rather than three colours: these are parts of a
+   single quantity, not unrelated categories, and the accent already means
+   "yours" everywhere else on this surface. */
+[data-tone='input'] {
+  background: var(--accent);
+}
+[data-tone='output'] {
+  background: color-mix(in srgb, var(--accent) 55%, var(--ink-400));
+}
+[data-tone='cache'] {
+  background: color-mix(in srgb, var(--accent) 22%, var(--ink-400));
+}
+
+.usage-keys,
+.usage-models {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 13px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.usage-models {
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line-100);
+}
+
+.usage-keys li,
+.usage-models li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-sm);
+}
+.usage-keys i {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+.usage-key-label {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-mid);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.usage-key-n {
+  color: var(--text-hi);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}
+.usage-key-pct {
+  min-width: 46px;
+  text-align: right;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+}

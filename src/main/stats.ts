@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { projectDirsFor, projectsRoot } from './sessions'
+import { collectTokens } from './tokens'
 import { EMPTY_STATS, WEEKS, languageName, type LanguageStat, type Stats, type StatsDay } from '../shared/stats'
 
 /**
@@ -250,7 +251,12 @@ export async function collectStats(folder: string | null): Promise<Stats> {
     totalSessions += 1
   }
 
-  const git = folder ? await collectGit(folder, keys[0]) : null
+  // Reads the transcripts, unlike everything above it, so it runs alongside
+  // git rather than after it.
+  const [tokens, git] = await Promise.all([
+    collectTokens(folder, keys),
+    folder ? collectGit(folder, keys[0]) : Promise.resolve(null)
+  ])
   if (git) {
     for (const [date, cell] of git.byDay) {
       const target = index.get(date)
@@ -287,6 +293,7 @@ export async function collectStats(folder: string | null): Promise<Stats> {
     hasRepo: Boolean(git),
     folder: folder ?? '',
     from: keys[0],
-    to: keys[keys.length - 1]
+    to: keys[keys.length - 1],
+    tokens
   }
 }

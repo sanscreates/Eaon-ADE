@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ChevronDown, Plus, Server } from 'lucide-react'
-import { hostLabel, type SshHost } from '@shared/ssh'
+import { hostKeyOf, hostLabel, type SshHost } from '@shared/ssh'
+import { useStore } from '../store/useStore'
 
 /**
  * Choosing a remote box, in the setup wizard.
@@ -49,6 +50,9 @@ export function HostPicker({
   onPath: (p: string) => void
 }): React.JSX.Element {
   const [configHosts, setConfigHosts] = useState<SshHost[] | null>(null)
+  // Boxes saved in Settings, which are not in ~/.ssh/config and would otherwise
+  // have to be typed in again every time a remote workspace is opened.
+  const savedHosts = useStore((s) => s.settings.sshHosts) ?? []
   const [manualOpen, setManualOpen] = useState(false)
   const [hostname, setHostname] = useState('')
   const [user, setUser] = useState('')
@@ -78,13 +82,18 @@ export function HostPicker({
     <div className="section">
       {configHosts === null ? (
         <p className="section-note">Reading ~/.ssh/config…</p>
-      ) : configHosts.length === 0 && !manualOpen ? (
+      ) : configHosts.length === 0 && savedHosts.length === 0 && !manualOpen ? (
         <p className="section-note">
           Nothing in ~/.ssh/config yet. Add a host below to connect to one directly.
         </p>
       ) : (
         <div className="card-grid">
-          {configHosts.map((h) => (
+          {[
+            ...configHosts,
+            ...savedHosts.filter(
+              (saved) => !configHosts.some((c) => hostKeyOf(c) === hostKeyOf(saved))
+            )
+          ].map((h) => (
             <button
               key={h.id}
               className="folder-card"

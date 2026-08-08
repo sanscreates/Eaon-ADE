@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Flame, FolderOpen, Globe, GitCommitHorizontal, MessagesSquare, Minus, Plus } from 'lucide-react'
+import { UsageOverview } from './UsageOverview'
 import type { Stats as StatsData, StatsDay } from '@shared/stats'
 import { EMPTY_STATS } from '@shared/stats'
 import { useActiveWorkspace, useStore } from '../store/useStore'
@@ -171,6 +172,9 @@ export function Stats(): React.JSX.Element {
       </header>
 
       <div className="stats-body">
+        {/* What the agents spent, read from the transcripts themselves. */}
+        <UsageOverview tokenStats={stats.tokens} />
+
         {/* ---- the streak, which is the thing people actually come for ---- */}
         <section className="stats-streaks">
           <div className="streak-main">
