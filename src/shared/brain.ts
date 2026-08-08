@@ -7,7 +7,28 @@
  * over MCP, so what one session learns the next one starts with.
  */
 
+import type { SshHost } from './ssh'
+
 export const BRAIN_DIR = '.eaonbrain'
+
+/**
+ * Which folder's brain a call is about.
+ *
+ * Every read and write carries one. The app used to keep a single store whose
+ * folder was set by whichever panel opened last, which made "where does this
+ * note go?" a question about ordering rather than about the folder you were
+ * looking at — and a note meant for one project could land in another's
+ * `.eaonbrain`. Naming the folder on every call removes the question.
+ *
+ * `host` is part of the identity, not decoration: `/home/dev/app` on a remote
+ * box and the same path on this Mac are different folders on different
+ * machines, and treating them as one would show — and write — a local folder's
+ * memory under a remote workspace.
+ */
+export interface BrainScope {
+  cwd: string | null
+  host: SshHost | null
+}
 
 export interface MemoryMeta {
   /** Filename without extension. Stable; the title can change freely. */

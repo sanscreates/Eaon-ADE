@@ -14,7 +14,14 @@ import type { Worktree, WorktreeChange } from '../shared/worktrees'
 import type { SshHost } from '../shared/ssh'
 import type { LinearTeam, TaskFetch } from '../shared/tasks'
 import type { Stats } from '../shared/stats'
-import type { BrainGraph, BrainStats, Memory, MemoryMeta, SearchHit } from '../shared/brain'
+import type {
+  BrainGraph,
+  BrainScope,
+  BrainStats,
+  Memory,
+  MemoryMeta,
+  SearchHit
+} from '../shared/brain'
 import type {
   AgentDef,
   DirEntry,
@@ -377,20 +384,35 @@ const api = {
     }
   },
 
-  /** Project memory: plain markdown in .eaonbrain/, shared with agents over MCP. */
+  /**
+   * Project memory: plain markdown in .eaonbrain/, shared with agents over MCP.
+   *
+   * Every call names the folder it is about. There is no "current" brain to
+   * fall out of step with what is on screen.
+   */
   brain: {
-    open: (cwd: string | null): Promise<{ stats: BrainStats; registered: boolean }> =>
-      ipcRenderer.invoke('brain:open', cwd),
-    list: (): Promise<MemoryMeta[]> => ipcRenderer.invoke('brain:list'),
-    get: (slug: string): Promise<Memory | null> => ipcRenderer.invoke('brain:get', slug),
-    write: (input: { title: string; content: string; tags?: string[]; slug?: string }): Promise<Memory | null> =>
-      ipcRenderer.invoke('brain:write', input),
-    remove: (slug: string): Promise<boolean> => ipcRenderer.invoke('brain:remove', slug),
-    search: (q: string): Promise<SearchHit[]> => ipcRenderer.invoke('brain:search', q),
-    related: (slug: string): Promise<{ backlinks: MemoryMeta[]; suggested: { meta: MemoryMeta; terms: string[] }[] }> =>
-      ipcRenderer.invoke('brain:related', slug),
-    graph: (): Promise<BrainGraph> => ipcRenderer.invoke('brain:graph'),
-    stats: (): Promise<BrainStats> => ipcRenderer.invoke('brain:stats')
+    open: (
+      scope: BrainScope
+    ): Promise<{ stats: BrainStats; registered: boolean; remote: boolean }> =>
+      ipcRenderer.invoke('brain:open', scope),
+    list: (scope: BrainScope): Promise<MemoryMeta[]> => ipcRenderer.invoke('brain:list', scope),
+    get: (scope: BrainScope, slug: string): Promise<Memory | null> =>
+      ipcRenderer.invoke('brain:get', scope, slug),
+    write: (
+      scope: BrainScope,
+      input: { title: string; content: string; tags?: string[]; slug?: string }
+    ): Promise<Memory | null> => ipcRenderer.invoke('brain:write', scope, input),
+    remove: (scope: BrainScope, slug: string): Promise<boolean> =>
+      ipcRenderer.invoke('brain:remove', scope, slug),
+    search: (scope: BrainScope, q: string): Promise<SearchHit[]> =>
+      ipcRenderer.invoke('brain:search', scope, q),
+    related: (
+      scope: BrainScope,
+      slug: string
+    ): Promise<{ backlinks: MemoryMeta[]; suggested: { meta: MemoryMeta; terms: string[] }[] }> =>
+      ipcRenderer.invoke('brain:related', scope, slug),
+    graph: (scope: BrainScope): Promise<BrainGraph> => ipcRenderer.invoke('brain:graph', scope),
+    stats: (scope: BrainScope): Promise<BrainStats> => ipcRenderer.invoke('brain:stats', scope)
   },
 
   sys: {

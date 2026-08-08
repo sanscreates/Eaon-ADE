@@ -22,8 +22,9 @@ const SERVER = { name: 'eaon-brain', version: '1.0.0' }
 const rootArg = process.argv.indexOf('--root')
 const workspace = rootArg !== -1 ? process.argv[rootArg + 1] : process.cwd()
 
-const store = new BrainStore()
-store.setWorkspace(workspace)
+// One server process per workspace, pinned to that workspace's folder — which
+// is what has always made the agent side of this per-folder.
+const store = new BrainStore(workspace)
 
 const log = (...args: unknown[]): void => console.error('[eaon-brain]', ...args)
 

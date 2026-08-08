@@ -10,9 +10,10 @@ import {
   Search,
   Trash2
 } from 'lucide-react'
-import type { BrainGraph as Graph, BrainStats, Memory, MemoryMeta } from '@shared/brain'
+import type { BrainGraph as Graph, BrainScope, BrainStats, Memory, MemoryMeta } from '@shared/brain'
 import { useActiveWorkspace, useStore } from '../store/useStore'
-import { relTime } from '../lib/util'
+import { basename, relTime } from '../lib/util'
+import { hostLabel } from '@shared/ssh'
 import { BrainGraph } from './BrainGraph'
 
 type Related = {
@@ -41,22 +42,32 @@ export function Brain(): React.JSX.Element {
   const [view, setView] = useState<'note' | 'graph'>('note')
   const [draft, setDraft] = useState<{ title: string; body: string } | null>(null)
 
+  /*
+   * One folder, fixed by the workspace this panel belongs to.
+   *
+   * There is a Brain workspace per folder (see `openPanel`), so the folder is
+   * settled before this component renders and never moves under it.
+   */
   const cwd = workspace?.cwd ?? null
+  const host = workspace?.host ?? null
+  const scope = useMemo<BrainScope>(() => ({ cwd, host }), [cwd, host])
 
   const refresh = useCallback(async () => {
     const [items, g, s] = await Promise.all([
-      window.eaon.brain.list(),
-      window.eaon.brain.graph(),
-      window.eaon.brain.stats()
+      window.eaon.brain.list(scope),
+      window.eaon.brain.graph(scope),
+      window.eaon.brain.stats(scope)
     ])
     setList(items)
     setGraph(g)
     setStats(s)
-  }, [])
+  }, [scope])
 
   useEffect(() => {
     let live = true
-    window.eaon.brain.open(cwd).then((res) => {
+    // Changing folders must not leave the previous one's note on screen.
+    setSelected(null)
+    window.eaon.brain.open(scope).then((res) => {
       if (!live) return
       setStats(res.stats)
       setRegistered(res.registered)
@@ -65,7 +76,7 @@ export function Brain(): React.JSX.Element {
     return () => {
       live = false
     }
-  }, [cwd, refresh])
+  }, [scope, refresh])
 
   useEffect(() => {
     if (!selected) {
@@ -74,7 +85,8 @@ export function Brain(): React.JSX.Element {
       return
     }
     let live = true
-    Promise.all([window.eaon.brain.get(selected), window.eaon.brain.related(selected)]).then(
+    Promise.all([window.eaon.brain.get(scope, selected),
+      window.eaon.brain.related(scope, selected)]).then(
       ([m, r]) => {
         if (!live) return
         setMemory(m)
@@ -85,7 +97,7 @@ export function Brain(): React.JSX.Element {
     return () => {
       live = false
     }
-  }, [selected, list])
+  }, [selected, list, scope])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -97,7 +109,7 @@ export function Brain(): React.JSX.Element {
 
   const save = async (): Promise<void> => {
     if (!draft || !memory) return
-    await window.eaon.brain.write({
+    await window.eaon.brain.write(scope, {
       slug: memory.slug,
       title: draft.title,
       content: draft.body,
@@ -108,7 +120,7 @@ export function Brain(): React.JSX.Element {
   }
 
   const create = async (): Promise<void> => {
-    const saved = await window.eaon.brain.write({
+    const saved = await window.eaon.brain.write(scope, {
       title: 'Untitled memory',
       content: 'What did you learn?\n'
     })
@@ -131,6 +143,29 @@ export function Brain(): React.JSX.Element {
     )
   }
 
+  /*
+   * A remote workspace's folder is on another machine, and its brain belongs
+   * beside the code there. Reading it here would mean opening the same path on
+   * this Mac — a different folder that may hold another project's memory, or
+   * none at all. Saying so beats showing the wrong one.
+   */
+  if (host) {
+    return (
+      <div className="surface-scroll">
+        <div className="surface-inner">
+          <div className="empty" style={{ paddingTop: 80 }}>
+            <strong>This workspace runs on {hostLabel(host)}.</strong>
+            <span>
+              A brain lives in the folder next to the code, and that folder is on another
+              machine. Eaon does not reach across ssh for it yet — the same reason agents on
+              remote panes are not given the memory tools.
+            </span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const dirty =
     Boolean(memory && draft) && (draft!.title !== memory!.title || draft!.body !== memory!.content)
 
@@ -145,6 +180,13 @@ export function Brain(): React.JSX.Element {
               : '…'}
           </span>
         </div>
+
+        {/* Which folder's memory this is. Always shown: a brain is per
+            folder, and leaving that implicit is what let one project's notes
+            be read as another's. */}
+        <span className="brain-folder-name mono" title={cwd}>
+          {basename(cwd) || cwd}
+        </span>
 
         <div className="field brain-search">
           <Search size={13} color="var(--text-dim)" />
@@ -247,7 +289,7 @@ export function Brain(): React.JSX.Element {
                   className="btn btn-ghost"
                   onClick={async () => {
                     if (!window.confirm(`Delete "${memory.title}"?`)) return
-                    await window.eaon.brain.remove(memory.slug)
+                    await window.eaon.brain.remove(scope, memory.slug)
                     setSelected(null)
                     await refresh()
                   }}

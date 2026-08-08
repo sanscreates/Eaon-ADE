@@ -102,10 +102,18 @@ function serialize(meta: {
 }
 
 export class BrainStore {
-  private root: string | null = null
+  private readonly root: string | null
 
-  /** Point the store at a workspace. Creates the folder on first use. */
-  setWorkspace(cwd: string | null): void {
+  /**
+   * Pinned to one folder for the life of the object.
+   *
+   * It used to be a mutable `setWorkspace`, with one shared store in the main
+   * process whose folder was whatever the last caller set. Every read and write
+   * then depended on call ordering rather than on the folder being asked
+   * about — so a note could be saved into a different project's `.eaonbrain`
+   * than the one on screen. A store that cannot change folders cannot do that.
+   */
+  constructor(cwd: string | null) {
     this.root = cwd ? path.join(cwd, BRAIN_DIR) : null
   }
 

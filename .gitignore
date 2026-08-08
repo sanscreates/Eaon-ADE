@@ -21,3 +21,7 @@ dev-app-update.yml
 # the product, and not something to publish alongside it — it stays on the
 # machines that need it.
 CLAUDE.md
+
+# Agent configuration and project skills, same reasoning as CLAUDE.md: local
+# guidance for the sessions working here, not part of the product.
+.claude/

@@ -1060,10 +1060,8 @@ export const useStore = create<AppState>((set, get) => ({
   /**
    * Open the Board, Vault or Brain as its own entry in the rail.
    *
-   * There is at most one of each. Opening it again brings it forward and points
-   * it at the folder you are currently in rather than stacking up duplicates —
-   * the Board and the Vault hold the same contents whichever workspace you came
-   * from, and the Brain reads the folder it is aimed at.
+   * Opening one again brings it forward rather than stacking up duplicates.
+   * How "again" is judged depends on the kind — see below.
    */
   openPanel(kind) {
     const s = get()
@@ -1073,7 +1071,18 @@ export const useStore = create<AppState>((set, get) => ({
     // rail read as one project rather than a flat list.
     const hue = source?.hue ?? nextHue(s.workspaces)
 
-    const existing = s.workspaces.find((w) => w.kind === kind)
+    /*
+     * A brain belongs to its folder; the others do not.
+     *
+     * The Board and the Vault hold the same contents whichever folder you came
+     * from — they live in `state.json`, not beside the code — so one of each is
+     * right and re-aiming it costs nothing. A brain *is* the folder's
+     * `.eaonbrain`, so re-aiming the single tab at a second folder silently
+     * turns the first project's Brain into the second's, and the two can never
+     * be open at once. Each folder gets its own instead.
+     */
+    const perFolder = kind === 'brain'
+    const existing = s.workspaces.find((w) => w.kind === kind && (!perFolder || w.cwd === cwd))
     if (existing) {
       set({
         workspaces: s.workspaces.map((w) => (w.id === existing.id ? { ...w, cwd, hue } : w)),
@@ -1087,7 +1096,10 @@ export const useStore = create<AppState>((set, get) => ({
     const workspace: Workspace = {
       id: uid('w_'),
       kind,
-      name: PANEL_LABEL[kind],
+      // With one per folder, the folder is the part that tells them apart.
+      name: perFolder
+        ? `${PANEL_LABEL[kind]} · ${basename(cwd) || cwd}`
+        : PANEL_LABEL[kind],
       cwd,
       hue,
       layout: 0,

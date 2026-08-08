@@ -38,6 +38,28 @@
   white-space: nowrap;
 }
 
+/*
+ * Which folder's memory is on screen. Always shown, even when there is only
+ * one — a brain is per folder, and leaving that implicit is what made it
+ * possible to read one project's notes thinking they were another's.
+ */
+.brain-folder-name {
+  flex: 0 0 auto;
+  max-width: 200px;
+  padding: 0 9px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--line-200);
+  background: var(--ink-100);
+  color: var(--text-mid);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .brain-search {
   flex: 1;
   max-width: 320px;

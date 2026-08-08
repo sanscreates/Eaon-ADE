@@ -25,6 +25,7 @@ import * as worktrees from './worktrees'
 import * as sshConfig from './ssh'
 import * as tasks from './tasks'
 import { BrainStore } from './brain/store'
+import type { BrainScope } from '../shared/brain'
 import { isProvisioned, provisionWorkspace } from './brain/register'
 import { getTheme } from '../shared/themes'
 import { STT_MODELS } from '../shared/stt'
@@ -47,7 +48,25 @@ let login: { id: string; flow: AccountLogin } | null = null
 const ptys = new PtyManager()
 const stt = new SttHost()
 const updater = new Updater()
-const brain = new BrainStore()
+/**
+ * The brain for one folder.
+ *
+ * Built per call rather than held as one shared store. `BrainStore` is
+ * stateless past its root and only touches disk when asked, so this costs
+ * nothing — and it makes it impossible for a read or a write to land in a
+ * folder other than the one the caller named.
+ *
+ * A remote folder gets no store at all. Its path belongs to another machine,
+ * and pointing the local store at that string would read, and on write create,
+ * a same-named folder on this one — quietly showing a local project's memory
+ * under a remote workspace, or inventing `/home/dev/app/.eaonbrain` on a Mac.
+ * Agents on remote panes are not provisioned either (see the `pty:spawn`
+ * handler), so this keeps both halves telling the same story.
+ */
+function brainFor(scope: BrainScope | null | undefined): BrainStore {
+  if (!scope || scope.host) return new BrainStore(null)
+  return new BrainStore(scope.cwd)
+}
 
 // Set before the app is ready so the user-data folder is ours alone and never
 // collides with another project that happens to share the package name.
@@ -656,24 +675,38 @@ function registerIpc(): void {
   ipcMain.on('speech:openVoiceSettings', () => speech.openVoiceSettings())
 
   // ---- project memory --------------------------------------------------
-  ipcMain.handle('brain:open', (_e, cwd: string | null) => {
-    brain.setWorkspace(cwd)
+  ipcMain.handle('brain:open', (_e, scope: BrainScope) => {
+    // Provisioning writes `.mcp.json` and `.claude/skills/` with the local fs,
+    // so it is skipped for a remote folder for the same reason pty:spawn skips
+    // it — there is nothing here to write to.
+    const local = scope?.cwd && !scope.host ? scope.cwd : null
     // Spawning a pane provisions the workspace too; doing it here as well
     // covers the case where the panel is opened before any agent has run, so
     // the badge tells the truth rather than "not connected yet, ask again".
-    const registration = cwd ? provisionWorkspace(cwd) : null
-    return { stats: brain.stats(), registered: cwd ? isProvisioned(cwd) : false, registration }
+    const registration = local ? provisionWorkspace(local) : null
+    return {
+      stats: brainFor(scope).stats(),
+      registered: local ? isProvisioned(local) : false,
+      registration,
+      remote: Boolean(scope?.host)
+    }
   })
-  ipcMain.handle('brain:list', () => brain.list())
-  ipcMain.handle('brain:get', (_e, slug: string) => brain.get(slug))
-  ipcMain.handle('brain:write', (_e, input: { title: string; content: string; tags?: string[]; slug?: string }) =>
-    brain.write(input)
+  ipcMain.handle('brain:list', (_e, scope: BrainScope) => brainFor(scope).list())
+  ipcMain.handle('brain:get', (_e, scope: BrainScope, slug: string) => brainFor(scope).get(slug))
+  ipcMain.handle(
+    'brain:write',
+    (_e, scope: BrainScope, input: { title: string; content: string; tags?: string[]; slug?: string }) =>
+      brainFor(scope).write(input)
   )
-  ipcMain.handle('brain:remove', (_e, slug: string) => brain.remove(slug))
-  ipcMain.handle('brain:search', (_e, q: string) => brain.search(q))
-  ipcMain.handle('brain:related', (_e, slug: string) => brain.related(slug))
-  ipcMain.handle('brain:graph', () => brain.graph())
-  ipcMain.handle('brain:stats', () => brain.stats())
+  ipcMain.handle('brain:remove', (_e, scope: BrainScope, slug: string) =>
+    brainFor(scope).remove(slug)
+  )
+  ipcMain.handle('brain:search', (_e, scope: BrainScope, q: string) => brainFor(scope).search(q))
+  ipcMain.handle('brain:related', (_e, scope: BrainScope, slug: string) =>
+    brainFor(scope).related(slug)
+  )
+  ipcMain.handle('brain:graph', (_e, scope: BrainScope) => brainFor(scope).graph())
+  ipcMain.handle('brain:stats', (_e, scope: BrainScope) => brainFor(scope).stats())
 
   // ---- auto update -----------------------------------------------------
   ipcMain.handle('update:state', () => updater.current())
