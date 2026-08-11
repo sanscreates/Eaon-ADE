@@ -14,8 +14,15 @@ dev-app-update.yml
 *.tmp.mjs
 
 # Machine-specific: absolute paths to this install. Regenerated per machine.
-# The memories themselves (.eaonbrain/) are committed on purpose.
 .mcp.json
+
+# What the sessions working in this repo have learned about this codebase.
+# Useful to them, nobody else's business, and not part of the product.
+#
+# The Brain feature still tells users to commit their own — a project's memory
+# travelling with the project is the whole point of it. That is a decision each
+# repository makes, and this one has made the other one.
+.eaonbrain/
 
 # Instructions for the agents working in this repo. Local guidance, not part of
 # the product, and not something to publish alongside it — it stays on the
