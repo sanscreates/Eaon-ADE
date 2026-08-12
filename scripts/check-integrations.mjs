@@ -213,6 +213,38 @@ check('a token connects github even with no CLI', gh2.status === 'connected', gh
 check('and the token itself is not in the reply', !JSON.stringify(gh2).includes('ghp_CANARY'))
 delete process.env.GITHUB_TOKEN
 
+/*
+ * The Dock case, which is how this was broken in the first place.
+ *
+ * A CLI that is installed and signed in, but sits somewhere PATH does not
+ * mention — /opt/homebrew/bin, say, which a launchd-started app never has.
+ * `which` finds it by asking the login shell; the check has to then *run* what
+ * `which` found. Testing with the stub on PATH proves nothing, because then the
+ * bare name works too.
+ */
+const offPathDir = fs.mkdtempSync(path.join(os.tmpdir(), 'eaon-offpath-'))
+const offPathGh = path.join(offPathDir, 'gh')
+fs.writeFileSync(
+  offPathGh,
+  '#!/bin/sh\necho "  ✓ Logged in to github.com account canary-user (keyring)"\n'
+)
+fs.chmodSync(offPathGh, 0o755)
+
+const pathBefore = process.env.PATH
+// Nothing but the system directories, as launchd would hand it over.
+process.env.PATH = '/usr/bin:/bin:/usr/sbin:/sbin'
+const offPath = await mod.detectProviders(async (bin) => (bin === 'gh' ? offPathGh : null))
+process.env.PATH = pathBefore
+fs.rmSync(offPathDir, { recursive: true, force: true })
+
+const ghOff = offPath.find((s) => s.id === 'github')
+check(
+  'a signed-in gh that is not on PATH reads connected',
+  ghOff.status === 'connected',
+  `${ghOff.status} — ${ghOff.detail}`
+)
+check('and the account name is read from it', ghOff.account === 'canary-user', ghOff.account)
+
 const signedOut = await mod.detectProviders(yesWhich)
 const gl = signedOut.find((s) => s.id === 'gitlab')
 check(

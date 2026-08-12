@@ -188,7 +188,19 @@ async function stateFor(def: ProviderDef, which: Which): Promise<ProviderState> 
         detail: `${def.bin} is not on your PATH.`
       }
     }
-    const account = await cliAccount(def.bin)
+    /*
+     * Run the path `which` just resolved, not the bare name.
+     *
+     * Launched from the Dock, this process has launchd's PATH —
+     * /usr/bin:/bin:/usr/sbin:/sbin — and nothing else. `gh` lives in
+     * /opt/homebrew/bin, so `execFile('gh')` is ENOENT, the catch below turns
+     * that into empty output, empty output does not say "logged in", and a
+     * perfectly signed-in user was told to run `gh auth login`. `which` had
+     * already asked the login shell and knew exactly where it was; throwing
+     * that answer away was the whole bug.
+     */
+    const exe = found.startsWith('/') ? found : def.bin
+    const account = await cliAccount(exe)
     if (account) {
       return { ...base, status: 'connected', account, detail: `Signed in through ${def.bin}.` }
     }
